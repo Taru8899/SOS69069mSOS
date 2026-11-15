@@ -3,7 +3,7 @@ title = mSOS
 package.name = msos
 package.domain = org.taru8899
 source.dir = .
-source.include_exts = py,png,jpg
+source.include_exts = py,png,jpg,js
 source.exclude_dirs = tests,__pycache__
 version = 0.1.0
 requirements = python3,kivy==2.3.0,requests,urllib3,chardet,idna,certifi,charset-normalizer,pycryptodome

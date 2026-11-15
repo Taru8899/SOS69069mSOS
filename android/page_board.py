@@ -1,0 +1,86 @@
+"""Board: a feed of the messages sent to a board address (default: the ledger address). Filter by
+tag, sort by block time / sender effective score / replies, reply to an exact message by its code."""
+from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+
+import feed as F
+import strings as S
+from page_feed import FeedPage
+from theme import EFF_MIN, short
+from ui import MsgCard, chip, chip_row
+from widgets import label
+
+
+class BoardPage(FeedPage):
+    kind = "board"
+
+    def board(self):
+        a = self.ui.get("board")
+        if not any(b["addr"].lower() == (a or "").lower() for b in self.app.boards):
+            a = self.app.boards[0]["addr"]
+            self.ui["board"] = a
+        return a
+
+    def params(self):
+        return {"board": self.board()}
+
+    def reply_dest(self):
+        return ("board", self.board())
+
+    def chips(self):
+        app, ui = self.app, self.ui
+        cur = self.board().lower()
+        boards = []
+        for b in app.boards:
+            on = b["addr"].lower() == cur
+            text = "%s %s" % (b["name"], short(b["addr"])) if on else b["name"]
+            boards.append(chip(text, lambda a=b["addr"]: app.set_board(a), selected=on))
+        boards.append(chip(S.BOARD_ADD, app.open_settings, kind="action"))
+        tags = [chip(S.BOARD_ALL_TAGS, lambda: app.set_tag(None), selected=not ui.get("tag"))]
+        for t in app.tags:
+            tags.append(chip(t, lambda t=t: app.set_tag(t), selected=ui.get("tag") == t))
+        tags.append(chip(S.BOARD_SAVE_TAG, app.open_settings, kind="outline"))
+        sorts = []
+        for key, text in S.BOARD_SORTS:
+            sorts.append(chip(text.format(n=EFF_MIN), lambda k=key: app.set_sort("board_sort", k),
+                              selected=ui.get("board_sort", "newest") == key))
+        return [chip_row(boards), chip_row(tags), chip_row(sorts)]
+
+    def arrange(self, msgs):
+        msgs = F.with_tag(msgs, self.ui.get("tag"))
+        sort = self.ui.get("board_sort", "newest")
+        if sort == "effmin":
+            return F.sort_newest(F.eff_at_least(msgs, EFF_MIN))
+        if sort == "eff":
+            return F.sort_eff(msgs)
+        if sort == "replies":
+            return F.sort_replies(msgs)
+        return F.sort_newest(msgs)
+
+    def show(self, feed, slot):
+        b = self.box
+        msgs = self.arrange(feed.messages())
+        visible = msgs[:self.shown()]
+        if not visible:
+            from widgets import Card
+            b.add_widget(Card(S.M_EMPTY))
+        now = None
+        for m in visible:
+            extras = [S.M_BLOCK.format(block=m["block"])]
+            ago = F.when(m["ts"], now)
+            if ago:
+                extras.append(ago)
+            b.add_widget(MsgCard(m, self.app.my, self.sub(m, extras), self.select, self.reply,
+                                 selected=self.ui.get("sel") == m["id"]))
+            if self.ui.get("sel") == m["id"]:
+                b.add_widget(self.detail(m))
+        b.add_widget(label(S.M_SHOWN.format(n=len(visible)), size_hint_y=None, height=dp(24),
+                           font_size="13sp", halign="center"))
+        more = self.more_button(len(msgs), feed, slot)
+        if more is not None:
+            b.add_widget(more)
+        b.add_widget(self.footer_note(feed))
+
+
+def build(app, box):
+    BoardPage(app, box).build()

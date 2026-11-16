@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 import time
 import traceback
 
@@ -15,6 +16,9 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.label import Label
 from kivy.utils import escape_markup
 
+import core
+import errors
+import outbox
 import page_board
 import page_chat
 import page_mind
@@ -25,7 +29,7 @@ import util
 from design import FAB_CLEAR, FAB_D, FAB_SINK, FONT_BODY, HEADER_H, HEADER_LINE_H, LIGHT, LOGO_W, NAV_H
 from page_compose import ComposeScreen
 from page_settings import SettingsScreen
-from theme import (BLACK, BLUE, BUILD, DEFAULT_BOARDS, GREEN, HAS_LOGO, LOGO, WELCOME_MIN, WHITE,
+from theme import (ETHERSCAN_TX, BLACK, BLUE, BUILD, DEFAULT_BOARDS, GREEN, HAS_LOGO, LOGO, WELCOME_MIN, WHITE,
                    short)
 from wallet import Wallet
 from widgets import (Card, Chevron, Choice, ErrorBanner, IconBtn, LogoBtn, NavTab, Panel, PillBtn,
@@ -56,12 +60,20 @@ class Catcher(ExceptionHandler):
 ExceptionManager.add_handler(Catcher())
 
 
+POLL_SECONDS = 4
+POLL_TRIES = 45          # 45 x 4 s = 3 minutes, then "still waiting" and a slower look
+SLOW_SECONDS = 20
+SLOW_TRIES = 180         # about one more hour
+HOLD_SECONDS = 60        # no automatic reload for a minute after a message was sent
+
+
 class MsosApp(App):
     def build(self):
         self.title = S.APP_TITLE
         if HAS_LOGO:
             self.icon = LOGO
         self.cfg_path = os.path.join(self.user_data_dir, "cfg.json")
+        self.store_dir = os.path.join(self.user_data_dir, "msgs")
         self.crash_path = os.path.join(self.user_data_dir, "crash.txt")
         self.crumb_path = os.path.join(self.user_data_dir, "breadcrumb.txt")
         cfg = {}
@@ -91,7 +103,10 @@ class MsosApp(App):
 
         self.wallet = Wallet(self)
         self.slots = {}           # (page, params) -> page_feed.Slot (cleared by reload)
-        self.pending = []         # messages sent, not yet in a block
+        self.outbox = outbox.Outbox(os.path.join(self.user_data_dir, "outbox.json"))
+        self.sending = False      # a message is being signed: no reload until the wallet has sent it
+        self.hold_until = 0.0     # no automatic reload before this time (a minute after sending)
+        self._tracking = set()
         self.page = "board"
         self.overlays = []
         self.banner = None
@@ -200,6 +215,8 @@ class MsosApp(App):
         self.set_drawer(not self.my, animate=False)         # first start: ask for the address
         self.render()
         self._mark_tabs()
+        # messages sent before the app was closed and not final yet: keep following them
+        Clock.schedule_once(lambda dt: [self.track(e) for e in self.outbox.active()], 1)
         return root
 
     # ---------------------------------------------------------- saved settings
@@ -314,6 +331,11 @@ class MsosApp(App):
         if tag not in self.tags:
             self.tags.append(tag)
         self._changed()
+
+    def follow_code(self, code):
+        """Save @code as a tag and show only that thread (the message and its replies)."""
+        self.add_tag("@" + code.lower())
+        self.set_tag("@" + code.lower())
 
     def remove_tag(self, tag):
         self.tags = [t for t in self.tags if t != tag]
@@ -526,24 +548,121 @@ class MsosApp(App):
             pass
 
     # ---------------------------------------------------------- sending finished
-    def tx_done(self, pend, h, ok, block, reason, code):
-        """A message transaction was mined (ok), reverted (not ok) or is still pending (None)."""
-        if ok is None:
-            self.say(S.CMP_PENDING.format(hash=short(h)), 12)
+    # ---------------------------------------------------------- sent messages
+    @property
+    def pending(self):
+        """Sent messages that are not in a block yet (the chat shows them as waiting)."""
+        return self.outbox.active()
+
+    def submitted(self):
+        """The wallet returned the transaction hash: reload is allowed again, but not for a minute."""
+        self.sending = False
+        self.hold_until = time.time() + HOLD_SECONDS
+
+    def open_tx(self, h):
+        if not util.open_url(ETHERSCAN_TX + h):
+            self.say(S.SETTINGS_OPEN_FAILED)
+
+    def copy_hash(self, h):
+        self.say(S.M_COPIED if util.copy_text(h) else S.TX_COPY_FAILED)
+
+    def dismiss_entry(self, eid):
+        self.outbox.dismiss(eid)
+        self.render()
+
+    def track(self, e):
+        """Follow a sent transaction in a worker thread until it is in a block (or forever, slowly)."""
+        if e["id"] in self._tracking:
             return
-        if pend in self.pending:
-            self.pending.remove(pend)
+        self._tracking.add(e["id"])
+        threading.Thread(target=self._track_work, args=(e,), daemon=True).start()
+
+    def _track_work(self, e):
+        chain = core.Chain(self.es_key)
+        n = 0
+        try:
+            while e["state"] in outbox.ACTIVE and self.outbox.get(e["id"]) is e:
+                if self._check_once(chain, e):
+                    return
+                n += 1
+                if n == POLL_TRIES and e["state"] == "wait":
+                    e["state"] = "slow"
+                    Clock.schedule_once(lambda dt: self.on_entry(e))
+                if n > POLL_TRIES + SLOW_TRIES:
+                    return
+                time.sleep(POLL_SECONDS if n < POLL_TRIES else SLOW_SECONDS)
+        finally:
+            self._tracking.discard(e["id"])
+
+    def _check_once(self, chain, e):
+        """One look at the receipt. True when the transaction is final (recorded or failed)."""
+        try:
+            rc = chain.receipt(e["hash"])
+        except Exception as ex:  # noqa: BLE001
+            note = errors.explain("wait", str(ex) or type(ex).__name__, has_hash=True)
+            if e.get("note") != note["title"]:
+                e["note"] = note["title"]
+                Clock.schedule_once(lambda dt: self.on_entry(e))
+            return False
+        if not rc:
+            if e.get("note"):
+                e["note"] = ""
+                Clock.schedule_once(lambda dt: self.on_entry(e))
+            return False
+        ok = str(rc.get("status", "0x1")) == "0x1"
+        e["block"] = int(rc.get("blockNumber") or "0x0", 16)
+        e["t_ok"] = time.time()
+        e["note"] = ""
         if ok:
-            self.say(S.CMP_OK.format(block=block, code=code), 10)
-            self.reload()
+            e["state"] = "ok"
         else:
-            why = reason or S.TX_FAILED_UNKNOWN
-            self.show_banner(S.CMP_FAILED.format(reason=why), "%s\n%s" % (why, h))
+            reason = chain.failure_reason(e["hash"], rc)
+            x = errors.explain("wait", "", None, reason, wallet=e.get("wallet", ""), me=short(e["frm"]), has_hash=True)
+            e["state"], e["err"] = "fail", {"title": x["title"], "body": x["body"], "tail": x["tail"]}
+        Clock.schedule_once(lambda dt: self.on_entry(e))
+        return True
+
+    def on_entry(self, e):
+        """A sent message changed state: save, update the open screens, reload after a successful one."""
+        self.outbox.save()
+        top = self.overlays[-1] if self.overlays else None
+        if isinstance(top, ComposeScreen):
+            top.on_entry(e)
+        elif not self.overlays:
             self.render()
+        if e["state"] == "ok":
+            self.say(S.CMP_OK.format(block=e["block"], code=e["code"]), 10)
+            self.reload_later()
+
+    def check_now(self, *_):
+        """Pull down on New message: look at the waiting transactions right now."""
+        act = self.outbox.active()
+        if not act:
+            return
+        self.say(S.CMP_CHECKING, 4)
+
+        def work():
+            chain = core.Chain(self.es_key)
+            for e in act:
+                self._check_once(chain, e)
+        threading.Thread(target=work, daemon=True).start()
+
+    def reload_later(self):
+        """Reload after a message was recorded, but not earlier than a minute after it was sent."""
+        Clock.schedule_once(lambda dt: self.reload(auto=True), max(0.2, self.hold_until - time.time()))
 
     # ---------------------------------------------------------- reload / render
-    def reload(self, *_):
-        """Pull-to-reload: every view is read again."""
+    def reload(self, *_, auto=False):
+        """Pull-to-reload: every view is read again (saved messages show at once, then the news).
+        Nothing reloads while a message is being signed; after it was sent an automatic reload
+        waits for the end of the hold."""
+        if self.sending:
+            self.say(S.MSG_RELOAD_HELD)
+            return
+        left = self.hold_until - time.time()
+        if auto and left > 0.5:
+            Clock.schedule_once(lambda dt: self.reload(auto=True), left)
+            return
         self.slots.clear()
         self.ui["shown"] = {}
         self.msg.text = S.MSG_RELOADING

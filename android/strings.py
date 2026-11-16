@@ -496,7 +496,7 @@ LINK_TILES = [
 
 # ------------------------------------------------------------------ v8: welcome
 WELCOME_RATE = "Everything is public. Nothing is private."
-WELCOME_SLOGAN = "Decentralised"
+WELCOME_SLOGAN = "Decentralised\nTrustless. Yours"
 WELCOME_CONNECTING = "Connecting..."
 
 # ------------------------------------------------------------------ v8: errors
@@ -795,9 +795,9 @@ SET_WATCH_HINT = "Address to watch 0x..."
 SET_WATCH_SAVE = "Save"
 SET_WATCH_NOTE = "Their notes to themselves appear in Mind next to yours, by block time."
 SET_TAGS = "Saved tags"
-SET_TAG_HINT = "#tag"
+SET_TAG_HINT = "#tag or reply code (kg6)"
 SET_TAG_ADD = "+ Tag"
-SET_TAGS_NOTE = "Kept for your next session. A team agrees on one tag and writes it in every message."
+SET_TAGS_NOTE = "Kept for your next session. A word is a #tag. Three characters such as kg6 are a reply code: the board shows that message and every reply to it. Write # first (#kg6) for a plain tag."
 SET_BAD_ADDR = "That is not a valid 0x address."
 SET_VERSION = "mSOS {build}"
 SET_CONNECTED = "Connected to {wallet}: {addr}"
@@ -833,3 +833,72 @@ CMP_ERR_STEP = ("[b]Wallet error at {step}[/b]\n{error}\n[size=12sp]code {code} 
 CMP_COPY_ERR = "Copy error"
 CMP_ERR_COPIED = "Error copied."
 MSG_MIND_CLEARED = "Wallet disconnected. Watched addresses removed from Mind."
+M_OFFLINE = "Offline: showing the saved messages up to block {block:,}. [size=12sp]{error}[/size]"
+M_CHECKING = "Checking for new messages..."
+SET_BAD_TAG = "Type a word, or the 3 characters of a reply code (for example kg6)."
+M_BTN_THREAD = "Replies to {code}"
+
+# ---- send results and errors (errors.py)
+CMP_STEP_SIGN_ANY = "signing in the wallet"
+CMP_STEP_WAIT = "waiting for the network"
+ERR_WALLET = "your wallet"
+ERR_SENT_NO = "Nothing was sent and no gas was spent."
+ERR_SENT_YES = "A transaction was sent: check it with the link."
+ERR_SENT_UNKNOWN = "It is not certain whether anything was sent: check your wallet's activity."
+ERR_TITLE = {
+    "cancel": "Cancelled in the wallet",
+    "typed": "The wallet cannot sign this",
+    "account": "Wrong account in the wallet",
+    "gas": "Not enough ETH for gas",
+    "fee": "The fee was too low or the transaction was replaced",
+    "check": "The ledger would refuse this message",
+    "revert": "The transaction failed on the ledger",
+    "timeout": "The wallet did not answer",
+    "network": "Network problem",
+    "other": "Could not send",
+}
+ERR_BODY = {
+    "cancel": "You declined the request at {step}. Tap Sign again when you want to continue.",
+    "typed": "{wallet} refused or does not support signing typed data at {step}. Disconnect and connect "
+             "the wallet again from the header, then tap Sign. [size=12sp]{raw}[/size]",
+    "account": "The wallet answered at {step} with an account problem. Select the account {me} in "
+               "{wallet}, then try again. [size=12sp]{raw}[/size]",
+    "gas": "The account has too little ETH to pay the gas fee ({step}). Add ETH to it, then try again.",
+    "fee": "At {step} the network refused the fee or a newer transaction took the place of this one. "
+           "Open the wallet's activity, wait or raise the fee, then try again. [size=12sp]{raw}[/size]",
+    "check": "Before sending, the app tested the transaction at {step}: {reason}.",
+    "revert": "The transaction was mined but the ledger refused it: {reason}. The message was not recorded.",
+    "timeout": "{wallet} did not answer in time at {step}. Open the wallet, look for a waiting request, "
+               "then tap Sign again.",
+    "network": "At {step} the network could not be reached. [size=12sp]{raw}[/size] The transaction "
+               "may still go through.",
+    "other": "Something went wrong at {step}. [size=12sp]{raw} (code {code})[/size]",
+}
+ERR_CONTRACT = {
+    "InvalidSignature": "a signature does not match the sender address",
+    "DuplicatePayloadHash": "this exact record is already on the ledger",
+    "MetadataTooLong": "a line is longer than 64 bytes",
+    "BatchTooLarge": "too many lines in one transaction",
+    "EmptyBatch": "there is nothing to record",
+    "LengthMismatch": "the lines and signatures do not match",
+    "NoETHAccepted": "the ledger does not accept ETH",
+    "ZeroAddress": "the recipient address is empty",
+}
+# ---- status cards of sent messages
+OUT_WAIT = "[b]Sent, waiting for the network[/b]\ncode {code} \u00b7 tx {tx}"
+OUT_SLOW = "[b]Still waiting[/b]\nNot failed, only slow. code {code} \u00b7 tx {tx}"
+OUT_OK = "[b]Message recorded[/b]\nBlock {block:,} \u00b7 code {code} \u00b7 tx {tx}"
+OUT_FAIL = "[b]{title}[/b]\n{body}\n{tail}"
+OUT_VIEW = "Open on Etherscan"
+OUT_COPY = "Copy hash"
+OUT_DISMISS = "Dismiss"
+OUT_NOTE = "[size=12sp]{note}[/size]"
+CMP_DONE = "Done"
+CMP_WAITING_TX = "Transaction sent. Waiting for the network (you can leave this screen)."
+MSG_RELOAD_HELD = "Reload waits until your transaction is sent."
+MSG_RELOAD_HOLD_LEFT = "Reload paused {secs} s so your new message is not interrupted."
+SET_CLEAR_SAVED = "Clear saved messages"
+SET_SAVED_NOTE = "Board and Chat messages are kept on this phone so they show at once. Mind is never saved."
+SET_SAVED_CLEARED = "Saved messages removed: {n} file(s)."
+SET_SAVED = "Saved messages"
+SET_UPDATED = "Up to date."

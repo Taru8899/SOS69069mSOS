@@ -22,6 +22,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import core
+import store
 import strings as S
 from activity import RPC_WINDOW, T_RECORDED, WINDOW_BLOCKS, ago, pad_topic
 from core import LEDGER
@@ -32,8 +33,10 @@ TAG_RE = re.compile(r"(?<![\w#])#([\w-]{1,30})")
 MIN_FIRST = 4            # a first load keeps looking further back until it has this many messages
 SEARCH_SECONDS = 40      # ... but never longer than this (public nodes are slow; then Load more)
 MAX_SPAN = 2_000_000     # largest Etherscan window (blocks) after several empty ones
+FORWARD_BOARD_ES = 4 * WINDOW_BLOCKS   # newer blocks fetched in one go for a saved Board (28 days)
+FORWARD_RPC = 3 * RPC_WINDOW           # ... without a key
 
-__all__ = ["decode_record", "group", "code_of", "reply_code", "tags_of", "Feed", "queries",
+__all__ = ["normalize_tag", "decode_record", "group", "code_of", "reply_code", "tags_of", "Feed", "queries",
            "sort_newest", "sort_eff", "sort_replies", "with_tag", "eff_at_least", "ago"]
 
 
@@ -144,9 +147,31 @@ def sort_replies(msgs):
     return sorted(msgs, key=lambda m: (m["n_replies"],) + _key(m), reverse=True)
 
 
+CODE_RE = re.compile(r"^[0-9a-z]{3}$")
+
+
+def normalize_tag(text):
+    """What a person typed or pasted -> a saved tag, or ''.
+        kg6 or @kg6   -> '@kg6'  a reply code: the replies to that message
+        #sale or sale -> '#sale' a hash tag (a word of any other length; write # to force a hash tag)"""
+    t = (text or "").strip().lower().replace(" ", "-")
+    if t.startswith("@"):
+        c = t[1:]
+        return "@" + c if CODE_RE.match(c) else ""
+    if not t.startswith("#") and CODE_RE.match(t):
+        return "@" + t
+    t = re.sub(r"[^\w-]", "", t.lstrip("#"))[:30]
+    return "#" + t if t else ""
+
+
 def with_tag(msgs, tag):
+    """Messages that carry a #tag, or - for an @code tag - the message with that code and every
+    reply to it (replies start with @code), so a whole thread is one filter."""
     if not tag:
         return list(msgs)
+    if tag.startswith("@"):
+        c = tag[1:].lower()
+        return [m for m in msgs if m["reply_to"] == c or m["code"] == c]
     t = tag.lower() if tag.startswith("#") else "#" + tag.lower()
     return [m for m in msgs if t in m["tags"]]
 
@@ -184,8 +209,11 @@ def queries(kind, params):
 class Feed:
     """Logs of one view (a board, a mind, a chat), extended step by step into the past."""
 
-    def __init__(self, chain, kind, params):
+    def __init__(self, chain, kind, params, path=None):
         self.chain, self.kind, self.params = chain, kind, params
+        self.path = path              # file of saved messages (None = nothing is saved)
+        self.hi = 0                   # newest block searched
+        self.seeded = False           # records came from the saved file (or an earlier refresh)
         self.records = {}
         self.latest = 0
         self.lo = None
@@ -236,21 +264,77 @@ class Feed:
         self._fetch_rpc(lo, hi)
         return lo
 
+    # -- saved messages
+    def seed(self):
+        """Fill the feed from the saved file, without any network call. True when something was loaded."""
+        d = store.load(self.path) if self.path else None
+        if not d:
+            return False
+        self.records = {(r["tx"], r["idx"]): r for r in d["records"]}
+        self.lo, self.hi, self.latest = d["lo"], d["hi"], d["hi"]
+        self.complete = self.lo == 0
+        self.seeded = True
+        return True
+
+    def save(self):
+        if not self.path or self.lo is None or not self.hi:
+            return
+        kept, new_lo = store.prune(self.records.values())
+        if new_lo is not None:
+            self.records = {(r["tx"], r["idx"]): r for r in kept}
+            self.lo = max(self.lo, new_lo)
+            self.complete = self.lo == 0
+        try:
+            store.save(self.path, self.lo, self.hi, kept)
+        except Exception:  # noqa: BLE001   a full disk must never break reading
+            pass
+
+    def _fetch(self, lo, hi):
+        """Fetch lo..hi (Etherscan when there is a key, else the public node)."""
+        if self.use_es:
+            try:
+                self._fetch_es(lo, hi)
+                return
+            except Exception as e:  # noqa: BLE001
+                self.note = S.M_ES_FAILED.format(error=str(e) or type(e).__name__)
+                self.use_es = False
+                self.exact = False
+        self._fetch_rpc(lo, hi)
+
+    def _forward(self):
+        """Saved messages: read only the blocks after the saved range (and the last REORG blocks again)."""
+        start = max(self.lo, self.hi - store.REORG + 1)
+        limit = None if (self.use_es and self.kind != "board") else (FORWARD_BOARD_ES if self.use_es else FORWARD_RPC)
+        new_lo = self.lo
+        if limit and self.latest - start + 1 > limit:
+            # too long since the last visit: search the newest part only; older() fills the gap later
+            start = self.latest - (WINDOW_BLOCKS if self.use_es else RPC_WINDOW) + 1
+            new_lo = start
+        self.records = {k: r for k, r in self.records.items() if r["block"] < start}
+        self._fetch(start, self.latest)
+        self.lo, self.hi = new_lo, self.latest
+
     def refresh(self):
-        self.records.clear()
         self.truncated = False
         self.note = ""
         self.latest = self.chain.block()
         self.use_es = bool(self.chain.api_key)
         self.exact = self.use_es
         self.span = WINDOW_BLOCKS
-        self.lo = self._load(self.latest)
+        if self.seeded and self.lo is not None:
+            self._forward()
+        else:
+            self.records.clear()
+            self.lo = self._load(self.latest)
+            self.hi = self.latest
+        self.seeded = True
         self.complete = self.lo == 0
         t0 = time.time()
         # always try to have MIN_FIRST messages: go further back until found, the start of the
         # ledger is reached, or the time budget is used up
         while not self.complete and self.count() < MIN_FIRST and time.time() - t0 < SEARCH_SECONDS:
             self.older()
+        self.save()
 
     def count(self):
         msgs = self.messages()
@@ -261,6 +345,7 @@ class Feed:
             return
         self.lo = self._load(self.lo - 1)
         self.complete = self.lo == 0
+        self.save()
 
     # -- result
     def messages(self):

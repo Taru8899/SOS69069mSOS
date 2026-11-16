@@ -3,7 +3,6 @@ code. The wallet signs every line (EIP-712), the app dry-runs the finished trans
 ledger, then the wallet sends all lines in ONE transaction. The app holds no key."""
 import os
 import threading
-import time
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -13,18 +12,18 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import escape_markup
 
 import core
+import errors
 import feed as F
+import outbox
 import strings as S
 from design import FAB_CLEAR, H_TO_CARD, BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
 import tx
 import util
 from design import CHIP_BG, CODE_BG, CREAM, DARK_GREEN, LIGHT_BLUE, LIGHT_GREEN, MUTED
 from theme import BLACK, BLUE, MAX_LINES, RED, WHITE, short
-from ui import Chip, Wrap, chip_row
-from widgets import Card, Choice, Dot, IconBtn, Overlay, Panel, label, make_input
+from ui import Chip, Wrap, chip_row, send_card
+from widgets import Card, Choice, Dot, IconBtn, Overlay, Panel, PullScroll, label, make_input
 
-POLL_SECONDS = 4
-POLL_TRIES = 45          # 45 x 4 s = 3 minutes
 REQUEST_TIMEOUT = 120    # seconds to wait for the wallet to answer one request
 REJECT_CODES = (4001, 5000)
 REJECT_WORDS = ("user rejected", "rejected by user", "user denied", "denied by user",
@@ -68,6 +67,9 @@ class ComposeScreen(Overlay):
         if self.kind == "chat" and self.addr and "," not in self.addr:
             self.peer_text = self.addr
         self.step = ""
+        self.step_key = ""
+        self.entry = None                 # the status entry of the message once it was sent
+        self._i, self._n = 0, 0
         self.lines = [""]
         self.inputs = []
         self.counters = []
@@ -89,7 +91,7 @@ class ComposeScreen(Overlay):
         head.add_widget(label(S.CMP_TITLE, font_size=FONT_TITLE))
         col.add_widget(head)
 
-        sv = ScrollView(do_scroll_x=False, bar_width=0)
+        sv = PullScroll(on_pull=self.app.check_now, do_scroll_x=False, bar_width=0)   # pull = check the transaction now
         box = BoxLayout(orientation="vertical", spacing=dp(GAP_CARDS), size_hint_y=None,
                         padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(PAD_BOTTOM + FAB_CLEAR)])
         box.bind(minimum_height=box.setter("height"))
@@ -209,6 +211,8 @@ class ComposeScreen(Overlay):
         for i in range(len(self.lines)):
             self.update_counter(i)
         self.update_summary()
+        if self.entry is not None:
+            self.show_entry()
 
     def dest_chip(self, text, on, dest):
         c = Chip(text, base=CHIP_BG)
@@ -255,7 +259,7 @@ class ComposeScreen(Overlay):
         c.color = RED if n > tx.MAX_LINE_BYTES else MUTED
 
     def add_line(self):
-        if len(self.lines) >= MAX_LINES or self.busy:
+        if len(self.lines) >= MAX_LINES or self.busy or self.entry is not None:
             return
         self.lines.append("")
         self.rebuild()
@@ -315,34 +319,36 @@ class ComposeScreen(Overlay):
         if text:
             self.status_box.add_widget(Card(text, bg=bg, fg=fg))
 
-    def fail(self, text, code=None):
+    def stop_sending(self):
         self.busy = False
+        self.app.sending = False              # reload is allowed again
+
+    def fail(self, text, code=None, reason=""):
+        self.stop_sending()
         self.go.set_enabled(True)
         self.update_summary()                 # the button says "Sign N lines" again
-        if is_rejection(text, code):
-            self.show(S.CMP_REJECTED, bg=RED, fg=WHITE)
-        elif is_unsupported(text, code):
+        app = self.app
+        wallet = app.wallet.label()
+        e = errors.explain(self.step_key or "send", text, code, reason, wallet=wallet,
+                           me=app.my.strip(), i=self._i, n=self._n)
+        if e["kind"] == "typed":
             try:
-                self.app.wallet.disconnect()          # drop the old link: the next Sign connects again
+                app.wallet.disconnect()       # drop the old link: the next Sign connects again
             except Exception:  # noqa: BLE001
                 pass
-            self.show(S.CMP_NO_TYPED, bg=RED, fg=WHITE)
-        else:
-            wallet = self.app.wallet.label()
-            self.show(S.CMP_ERR_STEP.format(step=self.step or "?", error=escape_markup(str(text)),
-                                            code=code if code is not None else "-", wallet=wallet),
-                      bg=RED, fg=WHITE)
-            plain = "%s | %s | code %s | %s" % (self.step, text, code, wallet)
-            cp = Choice(base=WHITE, fg=BLACK, text=S.CMP_COPY_ERR, bold=True, size_hint_y=None,
-                        height=dp(H_FIELD))
-            cp.bind(on_release=lambda *_: self.show_copy(plain))
-            self.status_box.add_widget(cp)
+        self.show(S.OUT_FAIL.format(title=e["title"], body=e["body"], tail=e["tail"]), bg=RED, fg=WHITE)
+        plain = errors.plain(e, wallet)
+        cp = Choice(base=WHITE, fg=BLACK, text=S.CMP_COPY_ERR, bold=True, size_hint_y=None, height=dp(H_FIELD))
+        cp.bind(on_release=lambda *_: self.show_copy(plain))
+        self.status_box.add_widget(cp)
 
     def show_copy(self, plain):
         self.show(S.CMP_ERR_COPIED if util.copy_text(plain) else S.TX_COPY_FAILED, bg=CREAM, fg=BLACK)
 
     def close(self):
         self.alive = False
+        if self.entry is None:
+            self.app.sending = False
         try:
             self.app.wallet.set_listener(None)
         except Exception:  # noqa: BLE001
@@ -351,6 +357,8 @@ class ComposeScreen(Overlay):
 
     # ------------------------------------------------------------ the flow
     def sign(self):
+        if self.entry is not None:                      # sent: the button now says Done
+            return self.close()
         if self.busy:
             return
         app = self.app
@@ -367,6 +375,7 @@ class ComposeScreen(Overlay):
         self.items = tx.new_items(lines)
         self.items[0]["ph"] = self.ph0                  # so the code shown above is the real one
         self.busy = True
+        app.sending = True                              # no reload until the transaction is submitted
         self.go.set_enabled(False)
         self.go.text = S.CMP_BUSY
         w = app.wallet
@@ -405,7 +414,7 @@ class ComposeScreen(Overlay):
         def timeout(dt):
             if rid in self._open and self.alive:
                 self._open.discard(rid)
-                self.fail(S.TX_TIMEOUT.format(step=method, wallet=self.app.wallet.label()))
+                self.fail("timed out: the wallet did not answer %s" % method)
         Clock.schedule_once(timeout, REQUEST_TIMEOUT)
 
     def sign_next(self, i):
@@ -417,6 +426,7 @@ class ComposeScreen(Overlay):
             return
         it = self.items[i]
         typed = tx.ledger_typed_data(self.frm, self.to, it["ph"], it["meta"])
+        self.step_key, self._i, self._n = "sign", i + 1, n
         self.step = S.CMP_STEP_SIGN.format(i=i + 1, n=n)
         self.show(S.CMP_SIGNING.format(i=i + 1, n=n, wallet=self.app.wallet.label()))
         self.request("eth_signTypedData_v4", [self.frm, typed],
@@ -435,7 +445,7 @@ class ComposeScreen(Overlay):
 
     def check(self):
         """Dry run of the whole transaction: a bad signature is caught before anything is sent."""
-        self.step = S.CMP_STEP_CHECK
+        self.step_key, self.step = "check", S.CMP_STEP_CHECK
         self.show(S.CMP_CHECKING)
         to, data = tx.record_call(self.frm, self.to, self.items)
         self.call = (to, data)
@@ -452,49 +462,48 @@ class ComposeScreen(Overlay):
         if not self.alive:
             return
         if not ok:
-            self.busy = False
-            self.go.set_enabled(True)
-            self.update_summary()
-            self.show(S.CMP_DRY_FAILED.format(reason=escape_markup(str(reason))), bg=RED, fg=WHITE)
+            self.fail("", None, reason=str(reason) or "refused")
             return
         to, data = self.call
-        self.step = S.CMP_STEP_SEND
+        self.step_key, self.step = "send", S.CMP_STEP_SEND
         self.show(S.CMP_SENDING.format(wallet=self.app.wallet.label()))
         self.request("eth_sendTransaction",
                      [{"from": self.frm, "to": to, "value": "0x0", "data": data}],
                      self.sent, self.fail)
 
     def sent(self, result):
+        """The wallet returned the transaction hash: keep a status entry, stay open, track the receipt."""
         h = str(result)
         app = self.app
         lines = [i["meta"] for i in self.items]
-        pend = {"kind": self.send_kind, "to": self.to, "lines": lines, "hash": h}
-        app.pending.append(pend)
+        e = outbox.new_entry(self.send_kind, self.to, self.frm, lines, self.code, h, app.wallet.label())
+        app.outbox.add(e)
+        app.submitted()                                  # reload is held for a minute from now
         if self.send_kind == "chat":
             app.add_chat(self.to)
             app.ui["peer"] = app.conv_with(self.to)
-        code, kind = self.code, self.send_kind
-        app.say(S.CMP_WAITING.format(hash=short(h)).split("\n")[0], 12)
+        self.busy = False
+        self.entry = e
+        app.track(e)
         if self.alive:
-            self.show(S.CMP_WAITING.format(hash=short(h)))
-        threading.Thread(target=self._poll, args=(h, pend, code), daemon=True).start()
-        # the message is on its way: leave the form; the chat shows it as "waiting"
-        if self.alive:
-            Clock.schedule_once(lambda dt: self.close(), 1.2)
+            self.go.text = S.CMP_DONE
+            self.go.set_enabled(True)
+            self.show_entry()
 
-    def _poll(self, h, pend, code):
-        chain = core.Chain(self.app.es_key)
-        err = None
-        for _ in range(POLL_TRIES):
-            try:
-                rc = chain.receipt(h)
-            except Exception as e:  # noqa: BLE001
-                rc, err = None, str(e)
-            if rc:
-                ok = str(rc.get("status", "0x1")) == "0x1"
-                block = int(rc.get("blockNumber") or "0x0", 16)
-                reason = "" if ok else chain.failure_reason(h, rc)
-                Clock.schedule_once(lambda dt: self.app.tx_done(pend, h, ok, block, reason, code))
-                return
-            time.sleep(POLL_SECONDS)
-        Clock.schedule_once(lambda dt: self.app.tx_done(pend, h, None, 0, err or "", code))
+    def show_entry(self):
+        """The status card (waiting / recorded / failed) with the transaction link."""
+        if not self.alive or self.entry is None:
+            return
+        app = self.app
+        self.status_box.clear_widgets()
+        self.status_box.add_widget(send_card(self.entry, app.open_tx, app.copy_hash, self.dismiss_entry))
+        self.go.text = S.CMP_DONE
+
+    def dismiss_entry(self, eid):
+        self.app.outbox.dismiss(eid)
+        self.close()
+
+    def on_entry(self, e):
+        if self.entry is not None and e["id"] == self.entry["id"]:
+            self.entry = e
+            self.show_entry()

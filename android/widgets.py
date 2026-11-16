@@ -20,7 +20,7 @@ from kivy.uix.widget import Widget
 import core
 import strings as S
 import util
-from design import RADIUS, RADIUS_PANEL, FIELD_H, WELCOME_SPINNER, FONT_TITLE, BTN_OFF_DARK, BTN_OFF_LIGHT, GRAY, HINT_GRAY, LIGHT_BLUE, NAV_GRAY, OK_BG, PANEL_GRAY, RED_BG, SELECTION, TILE_CAP_OFF, TRACK_GRAY, TRANSPARENT, WHITE_70, WHITE_85, DARK_GREEN
+from design import FONT_WELCOME_RATE, FONT_WELCOME_SLOGAN, WORDMARK_ASPECT, WORDMARK_MAX_DP, WORDMARK_W, RADIUS, RADIUS_PANEL, FIELD_H, WELCOME_SPINNER, FONT_TITLE, BTN_OFF_DARK, BTN_OFF_LIGHT, GRAY, HINT_GRAY, LIGHT_BLUE, NAV_GRAY, OK_BG, PANEL_GRAY, RED_BG, SELECTION, TILE_CAP_OFF, TRACK_GRAY, TRANSPARENT, WHITE_70, WHITE_85, DARK_GREEN
 from theme import (BLACK, BLUE, BUILD, FIELD, FIELD_FOCUS, GREEN, HAS_FIELD, HAS_LOGO, HAS_START, LOGO, RED, START, WHITE,
                    WORDMARK, HAS_WORDMARK, left_text)
 
@@ -670,9 +670,9 @@ class Welcome(FloatLayout):
             self.word = Label(text=S.APP_TITLE, bold=True, font_size="52sp", color=WHITE,
                               size_hint=(None, None))
         self.add_widget(self.word)
-        self.tag1 = Label(text=S.WELCOME_RATE, color=WHITE, font_size="16sp",
+        self.tag1 = Label(text=S.WELCOME_RATE, color=WHITE, font_size=FONT_WELCOME_RATE,
                           size_hint=(1, None), height=dp(28))
-        self.tag2 = Label(text=S.WELCOME_SLOGAN, color=WHITE, font_size="24sp", halign="center",
+        self.tag2 = Label(text=S.WELCOME_SLOGAN, color=WHITE, font_size=FONT_WELCOME_SLOGAN, halign="center",
                           valign="middle", size_hint=(1, None), height=dp(40))
         self.tag2.bind(size=lambda i, s: setattr(i, "text_size", s))
         self.status = Label(text=S.WELCOME_CONNECTING, color=WHITE, font_size="17sp",
@@ -699,9 +699,9 @@ class Welcome(FloatLayout):
             lg = min(w * 0.4, h * 0.22)
             self.logo.size = (lg, lg)
             self.logo.pos = (x + w / 2 - lg / 2, y + 0.50 * h - lg / 2)
-        ww = min(w * 0.62, dp(300))
+        ww = min(w * WORDMARK_W, dp(WORDMARK_MAX_DP))
         if HAS_WORDMARK:
-            self.word.size = (ww, ww * 111.0 / 371.0)
+            self.word.size = (ww, ww * WORDMARK_ASPECT)
         else:
             self.word.size = (ww, dp(70))
         self.word.pos = (x + w / 2 - ww / 2, y + 0.35 * h - self.word.height / 2)

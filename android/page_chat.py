@@ -9,7 +9,7 @@ import feed as F
 import strings as S
 import tx
 import util
-from design import FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_CONV_CARD, H_FIELD, H_HINT, MUTED, PAD_CARD
+from design import FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_CONV_CARD, H_FIELD, H_HINT, MUTED, PAD_CARD, W_BTN_PASTE
 from page_feed import FeedPage
 from theme import BLACK, BLUE, WHITE, short
 from ui import ChatItem, block_head, chip, chip_row
@@ -40,6 +40,9 @@ class ChatPage(FeedPage):
             return S.CHAT_NO_PEER
         return ""
 
+    def cache_key(self):
+        return ",".join(sorted([self.app.my.lower()] + self.peers()))
+
     def reply_dest(self):
         p = self.peers()
         return ("chat", p[0] if p else "")
@@ -60,7 +63,7 @@ class ChatPage(FeedPage):
         self.addr_in = make_input(S.CHAT_ADDR_HINT, ui.get("chat_addr", ""))
         self.addr_in.bind(text=lambda i, v: ui.__setitem__("chat_addr", v.strip()))
         row.add_widget(self.addr_in)
-        paste = Choice(base=BLUE, fg=WHITE, text=S.BTN_PASTE, bold=True, size_hint=(None, 1), width=dp(72))
+        paste = Choice(base=BLUE, fg=WHITE, text=S.BTN_PASTE, bold=True, size_hint=(None, 1), width=dp(W_BTN_PASTE))
         paste.bind(on_release=lambda *_: self.paste())
         row.add_widget(paste)
         p.add_widget(row)

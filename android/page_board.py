@@ -25,6 +25,12 @@ class BoardPage(FeedPage):
     def params(self):
         return {"board": self.board()}
 
+    def card_to(self):
+        return self.ui.get("board") or self.app.boards[0]["addr"]
+
+    def cache_key(self):
+        return self.ui.get("board") or self.app.boards[0]["addr"]
+
     def counter(self, msgs):
         return len(F.with_tag(msgs, self.ui.get("tag")))     # what the person will actually see
 

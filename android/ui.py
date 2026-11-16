@@ -235,3 +235,42 @@ class ChatItem(BoxLayout):
         self.add_widget(row)
         self.add_widget(Wrap(text=caption, font_size=FONT_NOTE, halign="right" if mine else "left",
                              padding=(dp(GAP_SMALL), 0)))
+
+
+# ------------------------------------------------------------------ status card of a sent message
+def send_card(e, on_open, on_copy, on_dismiss):
+    """Card for one sent message: waiting (cream), recorded (green), failed (red), with the
+    Etherscan link, Copy hash and - once finished - Dismiss."""
+    from design import CREAM, LIGHT_GREEN, H_BUTTON
+    from widgets import Panel
+    st = e["state"]
+    bg, fg = {"ok": (LIGHT_GREEN, BLACK), "fail": (RED, WHITE)}.get(st, (CREAM, BLACK))
+    h = e["hash"]
+    if st == "ok":
+        text = S.OUT_OK.format(block=e["block"], code=e["code"], tx=short(h))
+    elif st == "fail":
+        err = e.get("err") or {}
+        text = S.OUT_FAIL.format(title=err.get("title", ""), body=err.get("body", ""), tail=err.get("tail", ""))
+    elif st == "slow":
+        text = S.OUT_SLOW.format(code=e["code"], tx=short(h))
+    else:
+        text = S.OUT_WAIT.format(code=e["code"], tx=short(h))
+    p = Panel(bg=bg, orientation="vertical", size_hint_y=None, spacing=dp(GAP_SMALL),
+              padding=[dp(PAD_CARD), dp(PAD_CARD)])
+    p.bind(minimum_height=p.setter("height"))
+    p.add_widget(Wrap(text=text, color=fg, font_size=FONT_MSG))
+    if e.get("note") and st in ("wait", "slow"):
+        p.add_widget(Wrap(text=S.OUT_NOTE.format(note=e["note"]), color=fg, font_size=FONT_NOTE))
+    row = BoxLayout(size_hint_y=None, height=dp(H_BUTTON), spacing=dp(GAP))
+    b = Choice(base=BLUE if st != "fail" else WHITE, fg=WHITE if st != "fail" else BLACK, text=S.OUT_VIEW, bold=True)
+    b.bind(on_release=lambda *_: on_open(h))
+    row.add_widget(b)
+    c = Choice(base=WHITE, fg=BLACK, text=S.OUT_COPY, bold=True)
+    c.bind(on_release=lambda *_: on_copy(h))
+    row.add_widget(c)
+    if st in ("ok", "fail"):
+        d = Choice(base=BLACK, fg=WHITE, text=S.OUT_DISMISS, bold=True)
+        d.bind(on_release=lambda *_: on_dismiss(e["id"]))
+        row.add_widget(d)
+    p.add_widget(row)
+    return p

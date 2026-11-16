@@ -5,13 +5,15 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import escape_markup
 
 import strings as S
-from design import FONT_BIG, FONT_LABEL, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, H_BUTTON, H_FIELD, H_HEADING, H_NOTE, H_PAGE_BAR, PAD_CARD, PAD_PAGE, W_BACK, W_TAG_COL
+from design import FONT_BIG, FONT_LABEL, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, H_BUTTON, H_FIELD, H_HEADING, H_NOTE, H_PAGE_BAR, PAD_CARD, PAD_PAGE, W_BACK, W_BTN_PASTE, W_TAG_COL
+import feed as F
+import store
 import tx
 import util
 from design import CHIP_BG, CREAM, MUTED
 from theme import BLACK, BLUE, BUILD, ETHERSCAN_ADDR, LEDGER_ADDR, WHITE, short
 from ui import Chip, Wrap
-from widgets import Card, Choice, IconBtn, Overlay, Panel, label, make_input
+from widgets import Card, Choice, IconBtn, Overlay, Panel, PullScroll, label, make_input
 
 
 class SettingsScreen(Overlay):
@@ -38,6 +40,19 @@ class SettingsScreen(Overlay):
         b.bind(on_release=lambda *_: fn())
         return b
 
+    def paste_btn(self, field, add):
+        """Paste = take the text from the phone clipboard and add it at once (no Add / Save button).
+        Enter on the keyboard adds what was typed."""
+        field.bind(on_text_validate=lambda *_: add())
+        return self.btn(S.BTN_PASTE, lambda: self.paste_and(field, add), width=W_BTN_PASTE)
+
+    def paste_and(self, field, add):
+        t = util.paste_text()
+        if not (t or "").strip():
+            return self.say(S.MSG_CLIPBOARD_EMPTY_DOT)
+        field.text = t.strip()
+        add()
+
     def input_row(self, field, button):
         row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
         row.add_widget(field)
@@ -62,7 +77,7 @@ class SettingsScreen(Overlay):
         if self.status_text:
             col.add_widget(label(escape_markup(self.status_text), size_hint_y=None, height=dp(H_HEADING),
                                  font_size=FONT_SMALL, padding=(dp(PAD_PAGE), 0)))
-        sv = ScrollView(do_scroll_x=False, bar_width=0)
+        sv = PullScroll(on_pull=lambda: self.say(S.SET_UPDATED), do_scroll_x=False, bar_width=0)
         box = BoxLayout(orientation="vertical", spacing=dp(GAP_CARDS), size_hint_y=None,
                         padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(H_NOTE)])
         box.bind(minimum_height=box.setter("height"))
@@ -94,7 +109,7 @@ class SettingsScreen(Overlay):
                 r.add_widget(x)
             p.add_widget(r)
         self.board_in = make_input(S.SET_BOARD_HINT, "")
-        p.add_widget(self.input_row(self.board_in, self.btn(S.SET_ADD, self.add_board, width=72)))
+        p.add_widget(self.input_row(self.board_in, self.paste_btn(self.board_in, self.add_board)))
         box.add_widget(p)
 
         # ---- mind watch
@@ -108,7 +123,7 @@ class SettingsScreen(Overlay):
             r.add_widget(x)
             p.add_widget(r)
         self.watch_in = make_input(S.SET_WATCH_HINT, "")
-        p.add_widget(self.input_row(self.watch_in, self.btn(S.SET_WATCH_SAVE, self.add_watch, width=72)))
+        p.add_widget(self.input_row(self.watch_in, self.paste_btn(self.watch_in, self.add_watch)))
         p.add_widget(Wrap(text=S.SET_WATCH_NOTE, font_size=FONT_NOTE, color=MUTED))
         box.add_widget(p)
 
@@ -124,8 +139,13 @@ class SettingsScreen(Overlay):
         if chips:
             p.add_widget(chip_row(chips))
         self.tag_in = make_input(S.SET_TAG_HINT, "")
-        p.add_widget(self.input_row(self.tag_in, self.btn(S.SET_TAG_ADD, self.add_tag, width=84)))
+        p.add_widget(self.input_row(self.tag_in, self.paste_btn(self.tag_in, self.add_tag)))
         p.add_widget(Wrap(text=S.SET_TAGS_NOTE, font_size=FONT_NOTE, color=MUTED))
+        box.add_widget(p)
+
+        # ---- saved messages
+        p = self.card(S.SET_SAVED, S.SET_SAVED_NOTE)
+        p.add_widget(self.btn_full(S.SET_CLEAR_SAVED, self.clear_saved))
         box.add_widget(p)
 
         box.add_widget(Card(S.SET_VERSION.format(build=escape_markup(BUILD)), bg=CREAM))
@@ -147,6 +167,11 @@ class SettingsScreen(Overlay):
         if not util.open_url(url):
             self.say(S.SETTINGS_OPEN_FAILED)
 
+    def clear_saved(self):
+        n = store.clear(self.app.store_dir)
+        self.app.reload()
+        self.say(S.SET_SAVED_CLEARED.format(n=n))
+
     def add_board(self):
         t = self.board_in.text.strip().split()
         if not t or not tx.valid_address(t[-1]):
@@ -163,7 +188,8 @@ class SettingsScreen(Overlay):
         self.say("")
 
     def add_tag(self):
-        t = self.tag_in.text.strip().lstrip("#").lower().replace(" ", "-")
-        if t:
-            self.app.add_tag("#" + t)
+        t = F.normalize_tag(self.tag_in.text)
+        if not t:
+            return self.say(S.SET_BAD_TAG)
+        self.app.add_tag(t)
         self.say("")

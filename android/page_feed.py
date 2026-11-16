@@ -9,11 +9,12 @@ from kivy.utils import escape_markup
 
 import core
 import feed as F
+import store
 import strings as S
 from design import FONT_LABEL, FONT_NOTE, FONT_SMALL, GAP, GAP_SMALL, H_BUTTON, H_DETAIL, H_FIELD, H_LINE, H_NOTE
 import util
 from theme import BLACK, BLUE, ETHERSCAN_TX, PAGE_SIZE, WHITE, short
-from ui import Wrap, pill_button
+from ui import Wrap, pill_button, send_card
 from widgets import Card, Choice, Panel, label
 
 
@@ -28,6 +29,7 @@ class Slot:
         self.feed = None
         self.busy = False
         self.error = ""
+        self.synced = False       # the network has been asked for news since this slot was made
 
 
 class FeedPage:
@@ -57,6 +59,21 @@ class FeedPage:
         """(kind, address) a reply from this page is sent to."""
         raise NotImplementedError
 
+    def card_to(self):
+        """Address whose sent-message cards this page shows (None = all of its kind)."""
+        return None
+
+    def cache_key(self):
+        """What the saved-messages file of this view is named after, or None (nothing is saved)."""
+        return None
+
+    def make_feed(self):
+        key = self.cache_key()
+        path = store.file_for(self.app.store_dir, self.kind, key) if key else None
+        f = F.Feed(core.Chain(self.app.es_key), self.kind, self.params(), path=path)
+        f.counter = self.counter
+        return f
+
     def counter(self, msgs):
         """How many of the loaded messages count towards the 4 a first load must find."""
         return len(msgs)
@@ -78,19 +95,19 @@ class FeedPage:
             return
         slot.busy = True
         slot.error = ""
-        key, kind, params = self.app.es_key, self.kind, self.params()
         skey = self.skey()
-        app = self.app
 
         def work():
             try:
-                if slot.feed is None or not older:
-                    f = F.Feed(core.Chain(key), kind, params)
-                    f.counter = self.counter
-                    f.refresh()
+                if slot.feed is None:
+                    f = self.make_feed()
+                    f.seed()                  # the saved messages first, then only what is new
                     slot.feed = f
-                else:
+                if older:
                     slot.feed.older()
+                else:
+                    slot.feed.refresh()
+                    slot.synced = True
                 slot.feed.fill_eff()
             except Exception as e:  # noqa: BLE001
                 slot.error = str(e) or type(e).__name__
@@ -100,7 +117,7 @@ class FeedPage:
 
     def done(self, slot, skey):
         app = self.app
-        if slot.feed is not None:
+        if slot.feed is not None and slot.feed.latest and slot.synced:
             app.set_block(slot.feed.latest, slot.feed.chain.source)
         if app.slots.get(skey) is slot and app.page == self.kind:
             app.render()
@@ -111,11 +128,17 @@ class FeedPage:
         why = self.not_ready()
         for w in self.chips():
             b.add_widget(w)
+        for e in self.app.outbox.for_page(self.kind, self.card_to()):      # sent messages: link, result, errors
+            b.add_widget(send_card(e, self.app.open_tx, self.app.copy_hash, self.app.dismiss_entry))
         if why:
             b.add_widget(Card(why))
             return
         slot = self.slot()
-        if slot.feed is None and not slot.busy and not slot.error:
+        if slot.feed is None and not slot.error:
+            f = self.make_feed()              # saved messages show at once, no network needed
+            if f.seed():
+                slot.feed = f
+        if not slot.synced and not slot.busy and not slot.error:
             self.start()
         if slot.busy and slot.feed is None:
             b.add_widget(Card(S.M_LOADING))
@@ -135,7 +158,10 @@ class FeedPage:
         if not feed.exact:
             b.add_widget(Card(S.M_NO_KEY))
         if slot.error:
-            b.add_widget(Card(S.M_ERROR.format(error=escape_markup(slot.error))))
+            b.add_widget(Card((S.M_OFFLINE if feed.hi else S.M_ERROR).format(
+                block=feed.hi, error=escape_markup(slot.error))))
+        elif slot.busy and not slot.synced:
+            b.add_widget(Card(S.M_CHECKING))
         if feed.note:
             b.add_widget(Card(escape_markup(feed.note)))
         if feed.truncated:
@@ -194,10 +220,15 @@ class FeedPage:
         btns.add_widget(cp)
         btns.add_widget(op)
         p.add_widget(btns)
-        rp = Choice(base=BLACK, fg=WHITE, text="%s %s" % (S.M_BTN_REPLY, m["code"]), bold=True,
-                    size_hint_y=None, height=dp(H_BUTTON))
+        row = BoxLayout(size_hint_y=None, height=dp(H_BUTTON), spacing=dp(GAP))
+        rp = Choice(base=BLACK, fg=WHITE, text="%s %s" % (S.M_BTN_REPLY, m["code"]), bold=True)
         rp.bind(on_release=lambda *_: self.reply(m))
-        p.add_widget(rp)
+        row.add_widget(rp)
+        if self.kind == "board":                    # follow every reply to this message as one tag
+            th = Choice(base=BLUE, fg=WHITE, text=S.M_BTN_THREAD.format(code=m["code"]), bold=True)
+            th.bind(on_release=lambda *_: self.app.follow_code(m["code"]))
+            row.add_widget(th)
+        p.add_widget(row)
         return p
 
     def copy(self, text):

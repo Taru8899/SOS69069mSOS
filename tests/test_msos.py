@@ -128,6 +128,7 @@ def test_code_format():
 def test_queries():
     assert feed.queries("board", {"board": BOARD})[0][2].endswith(BOARD[2:].lower())
     q = feed.queries("chat", {"me": ME, "peer": PEER})
+    assert len(feed.queries("chat", {"me": ME, "peers": [PEER, "0x" + "ab" * 20]})) == 6
     assert q[0][1:] == [ "0x" + "0" * 24 + ME[2:], "0x" + "0" * 24 + PEER[2:]] and q[1][1] == q[0][2]
     assert len(feed.queries("mind", {"addrs": [ME, PEER]})) == 2
 
@@ -197,6 +198,186 @@ def test_typed_data_matches_struct_hash():
     d = json.loads(tx.ledger_typed_data(ME, PEER, ph, "hello"))
     assert d["message"]["metadataHash"] == "0x" + core.keccak256(b"hello").hex()
     assert d["domain"]["verifyingContract"] == core.LEDGER
+
+
+def test_board_looks_back_until_four_messages():
+    """A first Board load keeps going back (windows double while empty) until it has 4 messages."""
+    import types
+    from activity import T_RECORDED, WINDOW_BLOCKS, norm_log  # noqa: F401
+    latest = 30_000_000
+    old_block = latest - 400_000                     # about 55 days back: far outside the first 4 windows
+    calls = []
+
+    class FakeChain:
+        api_key, source = "key", "fake"
+
+        def es_logs(self, addr, topics, lo, hi):
+            calls.append((lo, hi))
+            out = []
+            for i in range(4):
+                if lo <= old_block <= hi:
+                    data = "0x" + (bytes([i + 1]) * 32).hex() + (96).to_bytes(32, "big").hex() + \
+                        (1700000000).to_bytes(32, "big").hex() + (128).to_bytes(32, "big").hex() + \
+                        (3).to_bytes(32, "big").hex() + (b"hi" + bytes([48 + i])).ljust(32, b"\0").hex()
+                    out.append({"tx": "0x%d" % i, "block": old_block, "idx": i, "ts": 1700000000,
+                                "topics": [T_RECORDED, "0x" + "00" * 12 + ME[2:], "0x" + "00" * 12 + BOARD[2:],
+                                           "0x" + "00" * 12 + ME[2:]], "data": data})
+            return out, False
+
+        def block(self):
+            return latest
+
+    f = feed.Feed(FakeChain(), "board", {"board": BOARD})
+    f.refresh()
+    assert len(f.messages()) >= 4, len(f.messages())
+    spans = [hi - lo + 1 for lo, hi in calls]
+    assert spans[0] == WINDOW_BLOCKS and spans[1] == 2 * WINDOW_BLOCKS and len(calls) <= 8, spans
+
+
+def _rec(tx, idx, block, signer, to, text, ph=None):
+    return {"tx": tx, "block": block, "idx": idx, "ts": 1700000000 + block, "signer": signer, "to": to,
+            "submitter": signer, "ph": ph or bytes([idx + 1]) * 32, "text": text}
+
+
+def test_store_round_trip_damage_and_prune():
+    import tempfile
+    import store
+    d = tempfile.mkdtemp()
+    path = store.file_for(d, "board", BOARD)
+    recs = [_rec("0x%d" % i, 1, 1000 + i, ME, BOARD, "m%d" % i) for i in range(10)]
+    store.save(path, 900, 1100, recs)
+    got = store.load(path)
+    assert got["lo"] == 900 and got["hi"] == 1100 and len(got["records"]) == 10
+    assert got["records"][0]["ph"] == recs[0]["ph"] and isinstance(got["records"][0]["ph"], bytes)
+    open(path, "w").write("{broken")                      # a damaged file is ignored
+    assert store.load(path) is None
+    open(path, "w").write('{"v": 99, "lo": 1, "hi": 2, "records": []}')     # another version
+    assert store.load(path) is None
+    kept, new_lo = store.prune(recs, 4)                  # the newest 4 are kept, and the cut block is dropped
+    assert new_lo == 1007 and [r["block"] for r in kept] == [1009, 1008, 1007]
+    assert store.clear(d) == 1 and store.load(path) is None
+
+
+def _fake_chain(latest, events, calls):
+    class C:
+        api_key, source = "key", "fake"
+
+        def block(self):
+            return latest
+
+        def es_logs(self, addr, topics, lo, hi):
+            calls.append((lo, hi))
+            from activity import T_RECORDED
+            out = []
+            for r in events:
+                if lo <= r["block"] <= hi:
+                    off = (128).to_bytes(32, "big")
+                    txt = r["text"].encode()
+                    data = "0x" + r["ph"].hex() + (96).to_bytes(32, "big").hex() + r["ts"].to_bytes(32, "big").hex() + \
+                        off.hex() + len(txt).to_bytes(32, "big").hex() + txt.ljust(32, b"\0").hex()
+                    out.append({"tx": r["tx"], "block": r["block"], "idx": r["idx"], "ts": r["ts"],
+                                "topics": [T_RECORDED, "0x" + "00" * 12 + r["signer"][2:], "0x" + "00" * 12 + r["to"][2:],
+                                           "0x" + "00" * 12 + r["signer"][2:]], "data": data})
+            return out, False
+    return C()
+
+
+def test_saved_board_fetches_only_new_blocks():
+    import tempfile
+    import store
+    from activity import WINDOW_BLOCKS
+    d = tempfile.mkdtemp()
+    path = store.file_for(d, "board", BOARD)
+    latest1 = 5_000_000
+    ev = [_rec("0x%d" % i, 1, latest1 - 100 * i, ME, BOARD, "old%d" % i) for i in range(1, 6)]
+    calls = []
+    f = feed.Feed(_fake_chain(latest1, ev, calls), "board", {"board": BOARD}, path=path)
+    assert not f.seed()                                   # nothing saved yet
+    f.refresh()
+    assert len(f.messages()) == 5 and os.path.exists(path)
+    # next visit: 3 blocks later, one new message, one message in the last 64 blocks is read again
+    ev.append(_rec("0xnew", 1, latest1 + 2, ME, BOARD, "fresh"))
+    calls2 = []
+    g = feed.Feed(_fake_chain(latest1 + 3, ev, calls2), "board", {"board": BOARD}, path=path)
+    assert g.seed() and len(g.messages()) == 5            # the saved messages are there without any network call
+    g.refresh()
+    assert len(g.messages()) == 6
+    assert calls2 == [(latest1 - store.REORG + 1, latest1 + 3)], calls2     # only the newest blocks were fetched
+    # a very long absence: only the newest window is fetched, older ones are filled in later
+    calls3 = []
+    h = feed.Feed(_fake_chain(latest1 + 10 * WINDOW_BLOCKS, ev, calls3), "board", {"board": BOARD}, path=path)
+    h.seed()
+    h.refresh()
+    assert calls3[0][0] == latest1 + 10 * WINDOW_BLOCKS - WINDOW_BLOCKS + 1 and h.lo == calls3[0][0]
+    assert len(h.records) >= 6                           # the saved ones are still shown
+
+
+def test_offline_keeps_saved_messages():
+    import tempfile
+    import store
+    d = tempfile.mkdtemp()
+    path = store.file_for(d, "board", BOARD)
+    store.save(path, 100, 200, [_rec("0x1", 1, 150, ME, BOARD, "kept")])
+
+    class Down:
+        api_key = ""
+
+        def block(self):
+            raise RuntimeError("no network")
+    f = feed.Feed(Down(), "board", {"board": BOARD}, path=path)
+    assert f.seed()
+    try:
+        f.refresh()
+        raise AssertionError("should fail")
+    except RuntimeError:
+        pass
+    assert len(f.messages()) == 1 and f.hi == 200
+
+
+def test_reply_code_tag_groups_a_thread():
+    root = _rec("0xr", 1, 10, ME, BOARD, "888 for sale", bytes([7]) * 32)
+    code = feed.code_of(bytes([7]) * 32)
+    rep1 = _rec("0xa", 1, 11, PEER, BOARD, "@%s how much" % code)
+    rep2 = _rec("0xb", 1, 12, ME, BOARD, "@%s.. 20 eth" % code.upper(), bytes([9]) * 32)
+    other = _rec("0xc", 1, 13, PEER, BOARD, "something else #sale", bytes([8]) * 32)
+    msgs = feed.group([root, rep1, rep2, other])
+    got = feed.with_tag(msgs, "@" + code)
+    assert sorted(m["tx"] for m in got) == ["0xa", "0xb", "0xr"]           # the message and its replies
+    assert [m["tx"] for m in feed.with_tag(msgs, "#sale")] == ["0xc"]
+    assert feed.normalize_tag("kg6") == "@kg6" and feed.normalize_tag("@KG6") == "@kg6"
+    assert feed.normalize_tag("#kg6") == "#kg6" and feed.normalize_tag("sale") == "#sale"
+    assert feed.normalize_tag("@toolong") == "" and feed.normalize_tag("  ") == "" and feed.normalize_tag("#") == ""
+
+
+def test_outbox_and_errors():
+    import tempfile
+    import errors
+    import outbox
+    path = os.path.join(tempfile.mkdtemp(), "outbox.json")
+    ob = outbox.Outbox(path)
+    e = ob.add(outbox.new_entry("board", BOARD, ME, ["hi"], "abc", "0x" + "11" * 32, "TP"))
+    ob.add(outbox.new_entry("mind", ME, ME, ["note"], "def", "0x" + "22" * 32))
+    again = outbox.Outbox(path)                           # survives a restart
+    assert len(again.items) == 2 and len(again.active()) == 2
+    assert [x["kind"] for x in again.for_page("board", BOARD)] == ["board"] and again.for_page("chat") == []
+    again.items[0]["state"] = "ok"
+    assert len(again.active()) == 1
+    again.dismiss(e["id"])
+    assert len(outbox.Outbox(path).items) == 1
+    table = [("sign", "User rejected the request", 4001, "", "cancel", False),
+             ("sign", "the method eth_signTypedData_v4 does not exist", None, "", "typed", False),
+             ("send", "insufficient funds for gas * price + value", None, "", "gas", False),
+             ("send", "replacement transaction underpriced", None, "", "fee", None),
+             ("check", "", None, "InvalidSignature", "check", False),
+             ("wait", "", None, "DuplicatePayloadHash", "revert", True),
+             ("send", "request timed out", None, "", "timeout", None),
+             ("wait", "connection reset", None, "", "network", True),
+             ("send", "weird [b] text", 7, "", "other", None)]
+    for step, text, code, reason, kind, sent in table:
+        x = errors.explain(step, text, code, reason, wallet="TokenPocket", me="0x08E5...5fEE", has_hash=(step == "wait"))
+        assert x["kind"] == kind and x["sent"] is sent, (step, x["kind"], x["sent"])
+        assert "[b] text" not in x["body"]                # user text is escaped for markup
+    assert "already on the ledger" in errors.explain("wait", "", None, "DuplicatePayloadHash")["body"]
 
 
 if __name__ == "__main__":

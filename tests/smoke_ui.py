@@ -210,5 +210,171 @@ def test_everything():
     print("ok app actions")
 
 
+def test_rules():
+    """The rules of this version: + on every screen, chats with 2+ addresses kept, Mind clean-up."""
+    src = open(os.path.join(HERE, "..", "android", "main.py")).read()
+    assert "fab.opacity = 0" not in src and "fab.disabled = True" not in src      # the + is never hidden
+    OTHER = "0x" + "5d" * 20
+    app = main.MsosApp()
+    app.build()
+    app.my, app.es_key = ME, "KEYKEEP"
+    app.open_settings()                                   # a screen over the page: the + still works
+    opened = []
+    app.open_compose = lambda *a, **k: opened.append(1)
+    app.fab_tap()
+    assert opened == [1]
+    del app.open_compose
+    app.close_all()
+    app.open_compose()
+    cs = app.overlays[-1]
+    n = len(cs.lines)
+    app.fab_tap()                                         # on New message the + adds a line
+    assert len(cs.lines) == n + 1
+    app.close_all()
+    # a chat of 2+ addresses
+    app.add_chat(PEER)
+    assert app.add_to_chat(PEER, OTHER) == "" and app.chats == [PEER + "," + OTHER]
+    assert app.ui["peer"] == PEER + "," + OTHER
+    assert app.add_to_chat(app.ui["peer"], ME)            # your own address is refused
+    assert app.add_to_chat(app.ui["peer"], "0x12")        # not an address
+    assert app.add_to_chat(app.ui["peer"], "0x" + "11" * 20) == "" and len(app.conv_peers(app.ui["peer"])) == 3
+    assert app.add_to_chat(app.ui["peer"], "0x" + "22" * 20)      # a 4th other address: full
+    assert app.conv_with(OTHER) == app.ui["peer"]
+    app.page = "chat"
+    pg = main.page_chat.ChatPage(app, app.box)
+    f = sample_feed("chat", pg.params())
+    f.records[("0xz", 1)] = {"tx": "0xz", "block": 120, "idx": 1, "ts": 1700000120, "signer": PEER, "to": OTHER,
+                             "submitter": PEER, "ph": bytes([9]) * 32, "text": "between the two of them"}
+    got = pg.arrange(f.messages())
+    assert any(m["signer"] == PEER and m["to"] == OTHER for m in got)       # B to C is part of the chat
+    assert not any(m["signer"] == WATCH for m in got)
+    slot = Slot()
+    slot.feed = f
+    app.slots[pg.skey()] = slot
+    app.box.clear_widgets()
+    pg.build()
+    app.open_compose(dest=("chat", app.ui["peer"]))
+    cs = app.overlays[-1]
+    assert cs.kind == "chat" and cs.conv[0] == PEER and cs.peer_text == PEER
+    cs.pick_peer(OTHER)
+    assert cs.destination() == ("chat", OTHER)
+    cs.lines[0] = ""
+    cs.update_summary()
+    app.close_all()
+    # Mind: exit keeps your own messages, forgets the watched addresses; Chat and the key stay
+    app.page = "mind"
+    app.watch = [WATCH]
+    mp = main.page_mind.MindPage(app, app.box)
+    mslot = Slot()
+    mslot.feed = sample_feed("mind", mp.params())
+    app.slots[mp.skey()] = mslot
+    chats_before = list(app.chats)
+    app.exit_wallet()
+    assert app.watch == [] and app.es_key == "KEYKEEP" and app.chats == chats_before
+    kept = [k for k in app.slots if k[0] == "mind"]
+    assert len(kept) == 1
+    recs = app.slots[kept[0]].feed.records.values()
+    assert recs and all(r["signer"] == ME and r["to"] == ME for r in recs)
+    assert set(app.slots[kept[0]].feed.eff) <= {ME}
+    assert main.slot_key("mind", {"addrs": [ME]}) == kept[0]               # the next Mind load finds it
+    app.add_watch(WATCH)
+    app.on_stop()                                         # closing the app does the same
+    assert app.watch == []
+    import json
+    with open(app.cfg_path) as fh:
+        saved = json.load(fh)
+    assert saved["watch"] == [] and saved["key"] == "KEYKEEP" and saved["chats"] == chats_before
+    print("ok rules")
+
+
+def test_send_flow_cards_hold_and_paste():
+    """Result cards with the transaction link, the reload hold, Paste in Settings, pull to reload."""
+    import time
+    import tx
+    import strings as S
+    import util
+    app = main.MsosApp()
+    app.build()
+    app.my, app.es_key = ME, ""
+    app.add_chat(PEER)
+    app.open_compose(dest=("mind", ME))
+    cs = app.overlays[-1]
+    cs.lines = ["a note to myself"]
+    cs.items = tx.new_items(cs.lines)
+    cs.items[0]["ph"] = cs.ph0
+    cs.frm, cs.to, cs.send_kind = ME.lower(), ME.lower(), "mind"
+    app.sending = True                                    # the wallet is signing
+    app.slots[("x", "y")] = Slot()
+    app.reload()                                          # a reload now would interrupt the signing: held
+    assert ("x", "y") in app.slots
+    tracked = []
+    app.track = lambda e: tracked.append(e)
+    h = "0x" + "ab" * 32
+    cs.sent(h)
+    assert app.sending is False and app.hold_until > time.time() + 55          # a minute of calm
+    assert tracked and tracked[0]["hash"] == h and tracked[0]["state"] == "wait"
+    assert cs.entry is not None and cs.go.text == S.CMP_DONE and app.pending
+    opened = []
+    util_open = util.open_url
+    util.open_url = lambda u: opened.append(u) or True
+    app.open_tx(h)
+    assert opened == ["https://etherscan.io/tx/" + h]
+    util.open_url = util_open
+    app.reload(auto=True)                                 # an automatic reload waits for the hold
+    assert ("x", "y") in app.slots
+    app.hold_until = 0
+    app.reload()                                          # a manual pull after the hold works
+    assert ("x", "y") not in app.slots
+
+    class Chain:                                          # the receipt: recorded in block 123
+        def receipt(self, tx_hash):
+            return {"status": "0x1", "blockNumber": hex(123)}
+    e = cs.entry
+    assert app._check_once(Chain(), e) and e["state"] == "ok" and e["block"] == 123
+    app.on_entry(e)
+    assert cs.entry["state"] == "ok"
+    app.close_all()
+    app.page = "mind"
+    app.render()                                          # the card of the sent message is on the Mind page
+    assert any(w.__class__.__name__ == "Panel" for w in app.box.children)
+
+    class Bad:                                            # reverted on the ledger
+        def receipt(self, tx_hash):
+            return {"status": "0x0", "blockNumber": hex(5)}
+
+        def failure_reason(self, tx_hash, rc):
+            return "InvalidSignature"
+    e2 = main.outbox.new_entry("mind", ME, ME, ["x"], "abc", "0x" + "cd" * 32)
+    app.outbox.add(e2)
+    assert app._check_once(Bad(), e2) and e2["state"] == "fail" and "signature" in e2["err"]["body"]
+    app.outbox.dismiss(e2["id"])
+    # pulling down on every screen: Settings and New message have the same pull as the pages
+    app.open_settings()
+    st = app.overlays[-1]
+    assert st.status_text == ""
+    # Paste in Settings: the clipboard text is added at once, no Add / Save button
+    util.paste_text = lambda: "kg6"
+    st.paste_and(st.tag_in, st.add_tag)
+    assert "@kg6" in app.tags
+    util.paste_text = lambda: "My shop " + "0x" + "ab" * 20
+    st.paste_and(st.board_in, st.add_board)
+    assert app.boards[-1]["name"] == "My shop"
+    util.paste_text = lambda: ""
+    st.paste_and(st.watch_in, st.add_watch)
+    assert st.status_text == S.MSG_CLIPBOARD_EMPTY_DOT
+    app.close_all()
+    # welcome screen texts as on the dSOS start screen
+    assert S.WELCOME_SLOGAN == "Decentralised\nTrustless. Yours"
+    assert S.WELCOME_RATE == "Everything is public. Nothing is private."
+    import os
+    assert os.path.exists(os.path.join(HERE, "..", "android", "wordmark.png"))
+    # follow a reply code from a message: saved as a tag and selected
+    app.follow_code("KG6")
+    assert app.ui["tag"] == "@kg6"
+    print("ok send flow, hold, paste, welcome")
+
+
 if __name__ == "__main__":
     test_everything()
+    test_rules()
+    test_send_flow_cards_hold_and_paste()

@@ -88,7 +88,7 @@ def group(records):
     for (tx, signer, to), rs in groups.items():
         rs.sort(key=lambda r: r["idx"])
         first = rs[0]
-        lines = [r["text"] for r in rs]
+        lines = [r["text"].strip() for r in rs if r["text"].strip()] or ["\u2013"]
         text = "\n".join(lines)
         msgs.append({
             "id": "%s:%s:%s" % (tx, signer, to), "tx": tx, "block": first["block"],

@@ -78,21 +78,6 @@ class SettingsScreen(Overlay):
         p.add_widget(row)
         box.add_widget(p)
 
-        # ---- my address and keys
-        p = self.card(S.SET_ADDR_HEAD, S.SET_ADDR_NOTE)
-        self.addr_in = make_input(S.SET_ADDR_HINT, app.my)
-        w = app.wallet
-        if w.connected:
-            b = self.btn(S.SET_DISCONNECT, self.disconnect, base=BLACK, width=104)
-        else:
-            b = self.btn(S.SET_CONNECT, self.connect, width=104)
-        p.add_widget(self.input_row(self.addr_in, b))
-        p.add_widget(self.btn_full(S.SET_WATCH_SAVE, self.save_addr))
-        p.add_widget(label(S.SET_KEY_LABEL, size_hint_y=None, height=dp(18), font_size="12sp", color=MUTED))
-        self.key_in = make_input(S.SET_KEY_HINT, app.es_key, password=True)
-        p.add_widget(self.input_row(self.key_in, self.btn(S.SET_WATCH_SAVE, self.save_key, width=84)))
-        box.add_widget(p)
-
         # ---- boards
         p = self.card(S.SET_BOARDS)
         for i, b in enumerate(app.boards):
@@ -161,17 +146,6 @@ class SettingsScreen(Overlay):
         if not util.open_url(url):
             self.say(S.SETTINGS_OPEN_FAILED)
 
-    def save_addr(self):
-        a = self.addr_in.text.strip()
-        if a and not tx.valid_address(a):
-            return self.say(S.SET_BAD_ADDR)
-        self.app.set_my(a)
-        self.say("")
-
-    def save_key(self):
-        self.app.set_key(self.key_in.text.strip())
-        self.say("")
-
     def add_board(self):
         t = self.board_in.text.strip().split()
         if not t or not tx.valid_address(t[-1]):
@@ -185,30 +159,10 @@ class SettingsScreen(Overlay):
         if not tx.valid_address(a):
             return self.say(S.SET_BAD_ADDR)
         self.app.add_watch(a)
-        # Clear the field and force a full rebuild so the new chip appears immediately.
-        self.watch_in.text = ""
-        self.say("Watched " + a[:10] + "…")
+        self.say("")
 
     def add_tag(self):
         t = self.tag_in.text.strip().lstrip("#").lower().replace(" ", "-")
         if t:
             self.app.add_tag("#" + t)
         self.say("")
-
-    def connect(self):
-        w = self.app.wallet
-        w.set_listener(lambda text: self.say(text))
-        self.say(S.CMP_CONNECTING)
-
-        def ok():
-            if w.accounts:
-                self.app.set_my(w.accounts[0])
-            self.say(S.SET_CONNECTED.format(wallet=w.label(), addr=short(w.accounts[0] if w.accounts else "")))
-
-        def err(text, code=None):
-            self.say(S.SET_WALLET_FAIL.format(error=text))
-        w.connect(ok, err)
-
-    def disconnect(self):
-        self.app.exit_wallet()
-        self.say(S.MSG_WALLET_DISCONNECTED)

@@ -814,10 +814,10 @@ class Icon(Widget):
                 Line(points=P(0.5, 0.5, 0.5, 0.74), width=lw, cap="round")
                 Line(points=P(0.5, 0.5, 0.67, 0.4), width=lw, cap="round")
             elif n == "grid":                      # Board: four rounded squares
-                for gx in (0.16, 0.56):
-                    for gy in (0.16, 0.56):
-                        Line(rounded_rectangle=(ox + gx * s, oy + gy * s, 0.28 * s, 0.28 * s, 0.06 * s),
-                             width=lw)
+                for gx in (0.12, 0.54):
+                    for gy in (0.12, 0.54):
+                        Line(rounded_rectangle=(ox + gx * s, oy + gy * s, 0.34 * s, 0.34 * s, 0.07 * s),
+                             width=lw * 0.7)
             elif n == "mind":                      # Mind: a thought cloud and a small dot
                 Line(circle=(ox + 0.30 * s, oy + 0.46 * s, 0.16 * s, 180, 360), width=lw)
                 Line(circle=(ox + 0.52 * s, oy + 0.56 * s, 0.22 * s, 300, 450), width=lw)
@@ -825,9 +825,9 @@ class Icon(Widget):
                 Line(points=P(0.30, 0.30, 0.72, 0.29), width=lw, cap="round")
                 Ellipse(pos=(ox + 0.18 * s, oy + 0.08 * s), size=(0.1 * s, 0.1 * s))
             elif n == "chat":                      # Chat: a speech bubble with a tail
-                Line(rounded_rectangle=(ox + 0.14 * s, oy + 0.32 * s, 0.72 * s, 0.5 * s, 0.07 * s),
-                     width=lw)
-                Line(points=P(0.3, 0.32, 0.3, 0.14, 0.48, 0.32), width=lw, cap="round", joint="round")
+                Line(rounded_rectangle=(ox + 0.1 * s, oy + 0.3 * s, 0.8 * s, 0.56 * s, 0.08 * s),
+                     width=lw * 0.7)
+                Line(points=P(0.28, 0.3, 0.28, 0.12, 0.46, 0.3), width=lw * 0.7, cap="round", joint="round")
             elif n == "user":
                 Line(circle=(ox + 0.5 * s, oy + 0.64 * s, 0.14 * s), width=lw)
                 Line(circle=(ox + 0.5 * s, oy + 0.18 * s, 0.3 * s, -90, 90), width=lw)

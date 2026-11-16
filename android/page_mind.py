@@ -36,10 +36,7 @@ class MindPage(FeedPage):
         if app.my:
             who.append(chip(S.MIND_ME.format(addr=short(app.my)), kind="green"))
         for a in app.watch:
-            # Address chip is informational only. A separate small "×" chip removes it.
-            # Previously the whole blue chip was the remove control, so any tap deleted the address.
-            who.append(chip(short(a), kind="blue"))
-            who.append(chip("×", lambda a=a: app.remove_watch(a), kind="blue"))
+            who.append(chip("%s ×" % short(a), lambda a=a: app.remove_watch(a), kind="blue"))
         who.append(chip(S.MIND_WATCH, app.open_settings))
         row2 = []
         for key, text in S.MIND_SCOPES:

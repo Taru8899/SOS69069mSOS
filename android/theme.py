@@ -1,6 +1,7 @@
 """Constants and small helpers shared by all pages. Colours, sizes and fonts live in design.py
 (re-exported here, so `from theme import BLUE` keeps working)."""
 import os
+import re
 import tempfile
 
 import core
@@ -27,8 +28,9 @@ HAS_WORDMARK = os.path.exists(WORDMARK)
 APP_VERSION = "v0.1"
 try:                                   # build_info.py is written by the CI workflow
     import build_info
-    if build_info.NUMBER == "dev":
-        raise ImportError("not built by CI")
+    if build_info.NUMBER == "dev" or not str(build_info.NUMBER).isdigit() \
+            or not re.fullmatch(r"[0-9a-f]{1,12}", str(build_info.SHA)):
+        raise ImportError("not built by CI (or a damaged stamp)")
     BUILD = f"{APP_VERSION} \u00b7 build {build_info.NUMBER} \u00b7 {build_info.SHA}"
 except Exception:  # noqa: BLE001
     BUILD = f"{APP_VERSION} \u00b7 dev build"

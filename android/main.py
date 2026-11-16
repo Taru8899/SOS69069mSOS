@@ -19,14 +19,16 @@ import page_board
 import page_chat
 import page_mind
 import strings as S
-from design import FAB_D, FAB_GAP, FONT_BODY, HEADER_H, LOGO_W, NAV_H
+import tx
+import util
+from design import FAB_D, FAB_SINK, FONT_BODY, HEADER_H, HEADER_LINE_H, LIGHT, LOGO_W, NAV_H
 from page_compose import ComposeScreen
 from page_settings import SettingsScreen
 from theme import (BLACK, BLUE, BUILD, DEFAULT_BOARDS, GREEN, HAS_LOGO, LOGO, WELCOME_MIN, WHITE,
                    short)
 from wallet import Wallet
-from widgets import (Card, ErrorBanner, IconBtn, LogoBtn, NavTab, PillBtn, PullScroll, Tap, Welcome,
-                     label)
+from widgets import (Card, Chevron, Choice, ErrorBanner, IconBtn, LogoBtn, NavTab, Panel, PillBtn,
+                     PullScroll, Tap, Welcome, label, make_input)
 
 Window.clearcolor = GREEN
 Window.softinput_mode = "below_target"   # keep the focused field visible above the keyboard
@@ -108,13 +110,22 @@ class MsosApp(App):
             self.logo.bind(on_release=lambda *_: self.set_page("board"))
             logo_col.add_widget(self.logo)
         head.add_widget(logo_col)
+        # page title, and under it the wallet address (underlined, with a triangle): tap = the wallet
+        # panel with the Etherscan key and the address, exactly as in dSOS
         title = Tap(orientation="vertical")
-        title.bind(on_release=lambda *_: self.open_settings())
-        title.add_widget(BoxLayout())
-        self.title_lbl = label("", size_hint_y=None, height=dp(30), font_size="22sp")
-        self.sub_lbl = label("", size_hint_y=None, height=dp(22), font_size="13sp")
+        title.bind(on_release=lambda *_: self.toggle_drawer())
+        title.add_widget(BoxLayout())                      # equal spacers keep the two lines together
+        self.title_lbl = label("", size_hint_y=None, height=dp(HEADER_LINE_H), font_size="22sp")
         title.add_widget(self.title_lbl)
-        title.add_widget(self.sub_lbl)
+        addr_row = BoxLayout(size_hint_y=None, height=dp(HEADER_LINE_H), spacing=dp(6))
+        self.sub = Label(text=self._head_text(), markup=True, color=BLACK, font_size=FONT_BODY,
+                         halign="left", valign="middle", size_hint=(None, 1))
+        self.sub.bind(texture_size=lambda i, ts: setattr(i, "width", ts[0]))
+        self.chev = Chevron(pos_hint={"center_y": 0.5})
+        addr_row.add_widget(self.sub)
+        addr_row.add_widget(self.chev)
+        addr_row.add_widget(BoxLayout())
+        title.add_widget(addr_row)
         title.add_widget(BoxLayout())
         head.add_widget(title)
         pill = PillBtn(text=S.CHAIN_PILL, color=WHITE, bold=True, size_hint=(None, None),
@@ -126,8 +137,28 @@ class MsosApp(App):
         self.msg = Label(text="", size_hint_y=None, height=dp(18), color=BLACK, font_size="13sp")
         main.add_widget(self.msg)
 
+        # ---- wallet panel (Etherscan key + address + Load / Exit): floats over the top of the body
+        # and is added to it only while open, so folded it takes no space
+        self.addr_in = make_input(S.HINT_ADDRESS, self.my)
+        self.key_in = make_input(S.HINT_API_KEY, self.es_key, password=True)
+        self.drawer_open = False
+        self.drawer = Panel(orientation="vertical", size_hint=(None, None), spacing=dp(8),
+                            padding=dp(12), bg=LIGHT)
+        self.drawer.size = (dp(300), dp(12 * 2 + 3 * 50 + 2 * 8))
+        self.drawer.add_widget(self._with_paste(self.key_in))
+        self.drawer.add_widget(self._with_paste(self.addr_in))
+        btn_row = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(8))
+        load_btn = Choice(base=BLUE, fg=WHITE, text=S.BTN_LOAD, bold=True, size_hint_x=0.7)
+        load_btn.bind(on_release=self.load)
+        exit_btn = Choice(base=BLACK, fg=WHITE, text=S.BTN_EXIT, bold=True, size_hint_x=0.3)
+        exit_btn.bind(on_release=self.exit_wallet)
+        btn_row.add_widget(load_btn)
+        btn_row.add_widget(exit_btn)
+        self.drawer.add_widget(btn_row)
+
         # ---- body: the page (scrolls, pull to reload) and overlay pages on top of it
         self.body = FloatLayout()
+        self.body.bind(width=self._fit_drawer)
         self.sv = PullScroll(size_hint=(1, 1), pos_hint={"x": 0, "y": 0}, on_pull=self.reload)
         self.box = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None,
                              padding=[dp(14), dp(4), dp(14), dp(16)])
@@ -154,8 +185,7 @@ class MsosApp(App):
         d = dp(FAB_D + 6)                                  # IconBtn draws its circle 6 dp smaller
         self.fab = IconBtn(icon="plus", bg=BLUE, color=WHITE, icon_size=30, size_hint=(None, None),
                            size=(d, d), pos_hint={"center_x": 0.5})
-        # Keep the FAB clearly above the nav bar (was NAV_H + FAB_GAP - 3, which looked fused).
-        self.fab.y = dp(NAV_H + FAB_GAP + 10)
+        self.fab.y = dp(NAV_H - FAB_SINK * FAB_D - 3)     # circle bottom = 10 % of its height inside the bar
         self.fab.bind(on_release=lambda *_: self.open_compose())
         root.add_widget(self.fab)
 
@@ -164,6 +194,7 @@ class MsosApp(App):
         root.add_widget(self.splash)
         self.splash.start()
 
+        self.set_drawer(not self.my, animate=False)         # first start: ask for the address
         self.render()
         self._mark_tabs()
         return root
@@ -191,11 +222,69 @@ class MsosApp(App):
 
     def set_my(self, addr):
         self.my = (addr or "").strip()
+        self.addr_in.text = self.my
         self._changed(reload=True)
 
     def set_key(self, key):
         self.es_key = key
+        self.key_in.text = key
         self._changed(reload=True)
+
+    # ---------------------------------------------------------- wallet panel (as in dSOS)
+    def _head_text(self):
+        return "[u]%s[/u]" % (short(self.my) or S.HEADER_NO_ADDR)
+
+    def refresh_head(self):
+        self.sub.text = self._head_text()
+
+    def _with_paste(self, field):
+        row = BoxLayout(size_hint_y=None, height=dp(50), spacing=dp(6))
+        row.add_widget(field)
+        pb = Choice(base=BLUE, fg=WHITE, text=S.BTN_PASTE, bold=True, size_hint=(None, 1), width=dp(72))
+        pb.bind(on_release=lambda *_: self.paste_into(field))
+        row.add_widget(pb)
+        return row
+
+    def paste_into(self, field):
+        t = util.paste_text()
+        if t:
+            field.text = t.strip()
+            self.say(S.MSG_PASTED)
+        else:
+            self.say(S.MSG_CLIPBOARD_EMPTY)
+
+    def _fit_drawer(self, *_):
+        self.drawer.width = max(dp(240), self.body.width - dp(28))
+        self.drawer.pos_hint = {"x": dp(14) / max(self.body.width, 1), "top": 1}
+
+    def set_drawer(self, show, animate=True):
+        self.drawer_open = bool(show)
+        self.chev.set_open(self.drawer_open, animate=animate)
+        if self.drawer_open:
+            self.close_all()                  # the panel and a page are never open together
+        if self.drawer_open and self.drawer.parent is None:
+            self._fit_drawer()
+            self.body.add_widget(self.drawer)
+        elif not self.drawer_open and self.drawer.parent is not None:
+            self.drawer.parent.remove_widget(self.drawer)
+
+    def toggle_drawer(self):
+        self.set_drawer(not self.drawer_open)
+
+    def load(self, *_):
+        """Load: take the address and the Etherscan key, save them, read everything again."""
+        a = self.addr_in.text.strip()
+        if a and not tx.valid_address(a):
+            self.say(S.SET_BAD_ADDR)
+            return
+        self.my, self.es_key = a, self.key_in.text.strip()
+        self.save_cfg()
+        self.slots.clear()
+        self.ui["shown"] = {}
+        self.set_drawer(False)                # the key and address fold back into the header
+        self.msg.text = S.MSG_RELOADING
+        self._say_until = 0
+        self.render()
 
     def add_board(self, name, addr):
         if not any(b["addr"].lower() == addr.lower() for b in self.boards):
@@ -254,19 +343,12 @@ class MsosApp(App):
         self.ui["sel"] = None
         self._changed()
 
-    # ---------------------------------------------------------- header
-    def _head_texts(self):
-        me = short(self.my) or S.M_NO_ADDR
-        if self.page == "board":
-            return me + (" · " + S.M_NO_ADDR if self.my else "")
-        if self.page == "mind":
-            return S.MIND_SUB.format(me=me, n=len(self.watch)) if self.my else S.M_NO_ADDR
-        peer = (self.ui.get("peer") or "").strip()
-        return "%s ⇄ %s" % (me, short(peer)) if peer else me
-
+    # ---------------------------------------------------------- header / block line
     def set_block(self, block, source):
+        """Block number and where it came from ("Block 26,423,806 via ethereum-rpc.publicnode.com");
+        a short message from say() is left alone until it has run out."""
         self.block, self.block_src = block, source
-        if not self.msg.text or self.msg.text.startswith("Block "):
+        if time.time() >= getattr(self, "_say_until", 0):
             self.restore_msg()
 
     def restore_msg(self):
@@ -275,6 +357,7 @@ class MsosApp(App):
     def say(self, text, secs=6):
         """Short message under the header; it goes away after `secs` seconds."""
         self.msg.text = text
+        self._say_until = time.time() + secs
         if getattr(self, "_say_ev", None) is not None:
             self._say_ev.cancel()
         self._say_ev = Clock.schedule_once(lambda dt: self.restore_msg(), secs)
@@ -296,6 +379,8 @@ class MsosApp(App):
 
     def set_page(self, name):
         self.close_all()
+        if self.drawer_open:
+            self.set_drawer(False)
         self.page = name
         self.ui["sel"] = None
         self._mark_tabs()
@@ -304,6 +389,8 @@ class MsosApp(App):
 
     # ---------------------------------------------------------- overlays (inside the body)
     def open_overlay(self, w):
+        if self.drawer_open:
+            self.set_drawer(False)
         self.overlays.append(w)
         self.body.add_widget(w)
         self.fab.opacity = 0
@@ -355,10 +442,12 @@ class MsosApp(App):
         self.wallet.on_resume()
 
     def exit_wallet(self, *_):
+        """Exit: disconnect the wallet link (the next signing asks the wallet again)."""
         try:
             self.wallet.disconnect()
         except Exception:  # noqa: BLE001
             pass
+        self.say(S.MSG_WALLET_DISCONNECTED)
 
     # ---------------------------------------------------------- sending finished
     def tx_done(self, pend, h, ok, block, reason, code):
@@ -382,13 +471,14 @@ class MsosApp(App):
         self.slots.clear()
         self.ui["shown"] = {}
         self.msg.text = S.MSG_RELOADING
+        self._say_until = 0
         self.render()
 
     def render(self):
         b = self.box
         b.clear_widgets()
         self.title_lbl.text = "[b]%s[/b]" % TITLES[self.page]
-        self.sub_lbl.text = self._head_texts()
+        self.refresh_head()
         self.crumb("render " + self.page)
         try:
             PAGES[self.page](self, b)
@@ -400,7 +490,7 @@ class MsosApp(App):
 
     def layout_report(self):
         out = ["window=%s build=%s" % (tuple(Window.size), BUILD)]
-        for n in ("head", "msg", "body", "sv", "box", "nav"):
+        for n in ("head", "msg", "body", "sv", "box", "nav", "drawer"):
             w = getattr(self, n, None)
             if w is not None:
                 out.append("%s pos=%s size=%s" % (n, tuple(round(v) for v in w.pos),

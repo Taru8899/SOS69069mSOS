@@ -29,6 +29,16 @@ REJECT_WORDS = ("user rejected", "rejected by user", "user denied", "denied by u
                 "request rejected", "user cancel", "cancelled by user", "canceled by user")
 
 
+UNSUPPORTED_WORDS = ("does not exist", "not available", "did not approve", "unauthorized method",
+                     "unsupported method", "method not found")
+
+
+def is_unsupported(text, code):
+    """The wallet link cannot do typed-data signing (the request went to a public node instead)."""
+    low = str(text).lower()
+    return code in (4200, -32601) or any(w in low for w in UNSUPPORTED_WORDS)
+
+
 def is_rejection(text, code):
     low = str(text).lower()
     return code in REJECT_CODES or any(w in low for w in REJECT_WORDS)
@@ -279,20 +289,17 @@ class ComposeScreen(Overlay):
     def fail(self, text, code=None):
         self.busy = False
         self.go.set_enabled(True)
+        self.update_summary()                 # the button says "Sign N lines" again
         if is_rejection(text, code):
             self.show(S.CMP_REJECTED, bg=RED, fg=WHITE)
-            return
-        msg = str(text or "")
-        # Common WalletConnect / mobile-wallet failure: method not advertised
-        low = msg.lower()
-        if "eth_signtypeddata_v4" in low or "does not exist" in low or "not available" in low:
-            msg = (
-                "This wallet does not support eth_signTypedData_v4 (EIP-712). "
-                "Open the session again with a wallet that does (MetaMask, Rabby, "
-                "Rainbow, Trust, etc.), or disconnect and reconnect after updating "
-                "the wallet app. Original error: " + msg
-            )
-        self.show(S.TX_ERROR.format(error=escape_markup(msg)), bg=RED, fg=WHITE)
+        elif is_unsupported(text, code):
+            try:
+                self.app.wallet.disconnect()          # drop the old link: the next Sign connects again
+            except Exception:  # noqa: BLE001
+                pass
+            self.show(S.CMP_NO_TYPED, bg=RED, fg=WHITE)
+        else:
+            self.show(S.TX_ERROR.format(error=escape_markup(str(text))), bg=RED, fg=WHITE)
 
     def close(self):
         self.alive = False
@@ -405,6 +412,7 @@ class ComposeScreen(Overlay):
         if not ok:
             self.busy = False
             self.go.set_enabled(True)
+            self.update_summary()
             self.show(S.CMP_DRY_FAILED.format(reason=escape_markup(str(reason))), bg=RED, fg=WHITE)
             return
         to, data = self.call

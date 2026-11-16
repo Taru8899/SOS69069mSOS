@@ -802,3 +802,7 @@ SET_BAD_ADDR = "That is not a valid 0x address."
 SET_VERSION = "mSOS {build}"
 SET_CONNECTED = "Connected to {wallet}: {addr}"
 SET_WALLET_FAIL = "Wallet link: {error}"
+CMP_NO_TYPED = ("Your wallet link did not allow typed-data signing (eth_signTypedData_v4), so the "
+                "request never reached the wallet. The link was reset. Tap Sign again: the wallet asks "
+                "to connect, accept the signing permission. If this repeats, this wallet cannot sign "
+                "typed data: connect another wallet app.")

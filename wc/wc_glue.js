@@ -18,10 +18,19 @@ export function createGlue(EthereumProvider, win) {
     if (provider) return provider;
     if (!initPromise) {
       initPromise = (async () => {
+        // WalletConnect v2 sometimes omits eth_signTypedData_v4 when only one chain
+        // is listed. Pass a second chain (Sepolia) so the method is advertised, and
+        // keep eth_signTypedData_v4 in optionalMethods so the wallet can approve it.
         const p = await EthereumProvider.init({
           projectId: cfg.projectId,
-          chains: [1],
-          optionalMethods: ["eth_signTypedData_v4", "eth_signTypedData", "personal_sign"],
+          chains: [1, 11155111],
+          optionalChains: [11155111],
+          optionalMethods: [
+            "eth_signTypedData_v4",
+            "eth_signTypedData",
+            "eth_signTypedData_v3",
+            "personal_sign",
+          ],
           showQrModal: false,
           metadata: {
             name: cfg.name,
@@ -29,7 +38,7 @@ export function createGlue(EthereumProvider, win) {
             url: cfg.url,
             icons: cfg.icons || [],
           },
-          rpcMap: { 1: cfg.rpc },
+          rpcMap: { 1: cfg.rpc, 11155111: cfg.rpc },
         });
         p.on("display_uri", (uri) => out({ t: "uri", uri }));
         p.on("disconnect", () => out({ t: "disconnect" }));

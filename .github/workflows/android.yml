@@ -27,9 +27,15 @@ jobs:
 
       - name: Stamp build number (shown on the welcome screen)
         run: |
-          printf 'NUMBER = "%s"\nSHA = "%s"\n' "\( {GITHUB_RUN_NUMBER}" " \){GITHUB_SHA::7}" > android/build_info.py
+          # GitHub Actions expressions must use ${{ }} so they are expanded by the runner.
+          # GITHUB_SHA is also available as a normal env var; take the first 7 chars in the shell.
+          printf 'NUMBER = "%s"\nSHA = "%s"\n' "${{ github.run_number }}" "${GITHUB_SHA:0:7}" > android/build_info.py
           cat android/build_info.py
-
+          # Fail the job early if placeholders somehow survived
+          if grep -q 'GITHUB_\|{' android/build_info.py; then
+            echo "::error::build_info.py still contains placeholders"
+            exit 1
+          fi
       - name: Test the message code (no phone needed)
         run: |
           pip install pycryptodome requests

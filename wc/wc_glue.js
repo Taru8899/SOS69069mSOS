@@ -18,19 +18,17 @@ export function createGlue(EthereumProvider, win) {
     if (provider) return provider;
     if (!initPromise) {
       initPromise = (async () => {
-        // WalletConnect v2 sometimes omits eth_signTypedData_v4 when only one chain
-        // is listed. Pass a second chain (Sepolia) so the method is advertised, and
-        // keep eth_signTypedData_v4 in optionalMethods so the wallet can approve it.
         const p = await EthereumProvider.init({
           projectId: cfg.projectId,
-          chains: [1, 11155111],
-          optionalChains: [11155111],
-          optionalMethods: [
-            "eth_signTypedData_v4",
-            "eth_signTypedData",
-            "eth_signTypedData_v3",
-            "personal_sign",
-          ],
+          chains: [1],
+          // Ethereum only: the provider adds other networks (Sepolia 11155111 ...) by itself unless
+          // this is given, and a wallet such as TokenPocket then complains "network not supported"
+          optionalChains: [1],
+          // mSOS signs every message line with eth_signTypedData_v4, so it is REQUIRED: a wallet that
+          // only approves the required methods would otherwise leave it out of the session, and the
+          // provider would then send the request to the public RPC node ("method does not exist").
+          methods: ["eth_sendTransaction", "eth_signTypedData_v4"],
+          optionalMethods: ["eth_signTypedData", "personal_sign"],
           showQrModal: false,
           metadata: {
             name: cfg.name,
@@ -38,7 +36,7 @@ export function createGlue(EthereumProvider, win) {
             url: cfg.url,
             icons: cfg.icons || [],
           },
-          rpcMap: { 1: cfg.rpc, 11155111: cfg.rpc },
+          rpcMap: { 1: cfg.rpc },
         });
         p.on("display_uri", (uri) => out({ t: "uri", uri }));
         p.on("disconnect", () => out({ t: "disconnect" }));
@@ -48,6 +46,16 @@ export function createGlue(EthereumProvider, win) {
       })().catch((e) => { initPromise = null; throw e; });
     }
     return initPromise;
+  }
+
+  const NEED = "eth_signTypedData_v4";
+  // false only when the session lists its approved methods and this one is missing
+  function approves(p, method) {
+    try {
+      const ns = p.session && p.session.namespaces && p.session.namespaces.eip155;
+      if (!ns || !Array.isArray(ns.methods)) return true;
+      return ns.methods.includes(method);
+    } catch (e) { return true; }
   }
 
   function sessionInfo(p) {
@@ -66,7 +74,20 @@ export function createGlue(EthereumProvider, win) {
   async function connect() {
     try {
       const p = await getProvider();
-      if (!p.session) await p.connect();
+      // a session made by an older build (or approved without typed-data signing) is dropped, so
+      // the wallet is asked again, this time with the method required
+      if (p.session && !approves(p, NEED)) {
+        try { await p.disconnect(); } catch (e) { /* ignore */ }
+      }
+      if (!p.session) {
+        // belt and braces: whatever the library put in its proposal, only chain 1 is asked for
+        try {
+          if (p.rpc && Array.isArray(p.rpc.optionalChains)) {
+            p.rpc.optionalChains = p.rpc.optionalChains.filter((c) => Number(c) === 1);
+          }
+        } catch (e) { /* ignore */ }
+        await p.connect();
+      }
       out(sessionInfo(p));
     } catch (e) {
       out({ t: "error", id: "connect", error: msg(e), code: e && e.code });
@@ -78,10 +99,20 @@ export function createGlue(EthereumProvider, win) {
     try {
       const p = await getProvider();
       if (!p.session) throw new Error("not connected");
+      if (method === NEED && !approves(p, NEED)) {
+        const e = new Error("The wallet did not approve " + NEED + ". Press Exit, then connect again " +
+          "and accept the signing request. A wallet without typed-data signing cannot be used.");
+        e.code = 4200;
+        throw e;
+      }
       const result = await p.request({ method, params: JSON.parse(paramsJson) });
       out({ t: "result", id, result });
     } catch (e) {
-      out({ t: "error", id, error: msg(e), code: e && e.code });
+      const text = msg(e);
+      // the public node answers "the method ... does not exist/is not available" when the session
+      // did not list the method: report it as 4200 so the app can reset the link and ask again
+      const code = (method === NEED && /does not exist|not available/i.test(text)) ? 4200 : (e && e.code);
+      out({ t: "error", id, error: text, code });
     }
   }
 

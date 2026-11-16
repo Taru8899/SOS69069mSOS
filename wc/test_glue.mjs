@@ -3,7 +3,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const handlers = {};
 let rejectConnect = false, failInit = false;
 const fakeProvider = {
-  session: null, accounts: [], chainId: 1,
+  session: null, accounts: [], chainId: 1, rpc: { chains: [1], optionalChains: [1, 11155111] },
   on(ev, fn) { handlers[ev] = fn; },
   async connect() {
     handlers.display_uri("wc:abc@2?relay-protocol=irn&symKey=00");
@@ -20,7 +20,7 @@ const fakeProvider = {
   async disconnect() { this.session = null; },
 };
 const EP = { async init(o) { if (failInit) throw new Error("bad project id"); EP.opts = o; return fakeProvider; } };
-const win = { __CFG: { projectId: "pid", name: "dSOS", description: "d", url: "https://x", rpc: "https://rpc" },
+const win = { __CFG: { projectId: "pid", name: "mSOS", description: "d", url: "https://x", rpc: "https://rpc" },
   addEventListener() {} };
 const g = createGlue(EP, win);
 g.boot();
@@ -29,6 +29,7 @@ await g.connect();
 q = g.drain();
 const types = q.map((m) => m.t);
 if (types.join() !== "uri,session") throw new Error("connect msgs " + types);
+if (JSON.stringify(fakeProvider.rpc.optionalChains) !== "[1]") throw new Error("only chain 1 may be proposed " + JSON.stringify(fakeProvider.rpc.optionalChains));
 const s = q[1];
 if (s.accounts[0] !== "0x08E5aaCaFAeFEf90d048AE4f97Cd4A8690E85fEE" || s.native !== "testwallet://" || s.wallet !== "TestWallet") throw new Error("session " + JSON.stringify(s));
 if (EP.opts.projectId !== "pid" || EP.opts.chains[0] !== 1 || EP.opts.showQrModal !== false) throw new Error("init opts");
@@ -42,6 +43,14 @@ q = g.drain();
 if (q[0].id !== 7 || q[0].result.length !== 66) throw new Error("send result");
 if (q[1].id !== 8 || q[1].result.length !== 132) throw new Error("sign result");
 if (q[2].t !== "error" || q[2].code !== 4001) throw new Error("reject " + JSON.stringify(q[2]));
+if (JSON.stringify(EP.opts.optionalChains) !== "[1]") throw new Error("optionalChains must be [1]");
+if (!EP.opts.methods.includes("eth_signTypedData_v4")) throw new Error("typed data must be a required method");
+// a session that was approved WITHOUT typed-data signing is dropped on connect and made again
+fakeProvider.session.namespaces = { eip155: { methods: ["eth_sendTransaction"] } };
+await g.request(11, "eth_signTypedData_v4", "[]"); q = g.drain();
+if (q[0].t !== "error" || q[0].code !== 4200 || !/Press Exit/.test(q[0].error)) throw new Error("missing method " + JSON.stringify(q));
+await g.connect(); q = g.drain();
+if (q.map((m) => m.t).join() !== "uri,session") throw new Error("reconnect after missing method " + q.map((m) => m.t));
 await g.disconnect(); q = g.drain(); if (q[0].t !== "disconnect") throw new Error("disconnect");
 await g.request(10, "eth_sendTransaction", "[]"); q = g.drain();
 if (q[0].t !== "error" || !/not connected/.test(q[0].error)) throw new Error("no session " + JSON.stringify(q));

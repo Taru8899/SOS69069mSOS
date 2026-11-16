@@ -5,6 +5,7 @@ from kivy.uix.boxlayout import BoxLayout
 
 import feed as F
 import strings as S
+from design import FONT_SMALL, H_LINE
 from page_feed import FeedPage
 from theme import EFF_MIN, short
 from ui import MsgCard, chip, chip_row
@@ -74,8 +75,8 @@ class BoardPage(FeedPage):
                                  selected=self.ui.get("sel") == m["id"]))
             if self.ui.get("sel") == m["id"]:
                 b.add_widget(self.detail(m))
-        b.add_widget(label(S.M_SHOWN.format(n=len(visible)), size_hint_y=None, height=dp(24),
-                           font_size="13sp", halign="center"))
+        b.add_widget(label(S.M_SHOWN.format(n=len(visible)), size_hint_y=None, height=dp(H_LINE),
+                           font_size=FONT_SMALL, halign="center"))
         more = self.more_button(len(msgs), feed, slot)
         if more is not None:
             b.add_widget(more)

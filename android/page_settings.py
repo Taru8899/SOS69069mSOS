@@ -5,6 +5,7 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import escape_markup
 
 import strings as S
+from design import FONT_BIG, FONT_LABEL, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, H_BUTTON, H_FIELD, H_HEADING, H_NOTE, H_PAGE_BAR, PAD_CARD, PAD_PAGE, W_BACK, W_TAG_COL
 import tx
 import util
 from design import CHIP_BG, CREAM, MUTED
@@ -24,11 +25,11 @@ class SettingsScreen(Overlay):
 
     # ------------------------------------------------------------ helpers
     def card(self, title, note=""):
-        p = Panel(orientation="vertical", size_hint_y=None, spacing=dp(8), padding=[dp(12), dp(12)])
+        p = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP), padding=[dp(PAD_CARD), dp(PAD_CARD)])
         p.bind(minimum_height=p.setter("height"))
-        p.add_widget(label("[b]%s[/b]" % title, size_hint_y=None, height=dp(22), font_size="15sp"))
+        p.add_widget(label("[b]%s[/b]" % title, size_hint_y=None, height=dp(H_HEADING), font_size=FONT_MSG))
         if note:
-            p.add_widget(Wrap(text=note, font_size="13sp", color=MUTED))
+            p.add_widget(Wrap(text=note, font_size=FONT_SMALL, color=MUTED))
         return p
 
     def btn(self, text, fn, base=BLUE, fg=WHITE, width=None):
@@ -38,7 +39,7 @@ class SettingsScreen(Overlay):
         return b
 
     def input_row(self, field, button):
-        row = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+        row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
         row.add_widget(field)
         row.add_widget(button)
         return row
@@ -52,18 +53,18 @@ class SettingsScreen(Overlay):
         app = self.app
         col = self.col
         col.clear_widgets()
-        head = BoxLayout(size_hint_y=None, height=dp(64), padding=[dp(14), dp(6)], spacing=dp(14))
-        back = IconBtn(icon="back", bg=WHITE, color=BLACK, size_hint=(None, 1), width=dp(56))
+        head = BoxLayout(size_hint_y=None, height=dp(H_PAGE_BAR), padding=[dp(PAD_PAGE), dp(GAP_SMALL)], spacing=dp(PAD_PAGE))
+        back = IconBtn(icon="back", bg=WHITE, color=BLACK, size_hint=(None, 1), width=dp(W_BACK))
         back.bind(on_release=lambda *_: app.close_top())
         head.add_widget(back)
-        head.add_widget(label(S.SET_TITLE, font_size="24sp"))
+        head.add_widget(label(S.SET_TITLE, font_size=FONT_TITLE))
         col.add_widget(head)
         if self.status_text:
-            col.add_widget(label(escape_markup(self.status_text), size_hint_y=None, height=dp(22),
-                                 font_size="13sp", padding=(dp(14), 0)))
+            col.add_widget(label(escape_markup(self.status_text), size_hint_y=None, height=dp(H_HEADING),
+                                 font_size=FONT_SMALL, padding=(dp(PAD_PAGE), 0)))
         sv = ScrollView(do_scroll_x=False, bar_width=0)
-        box = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None,
-                        padding=[dp(14), dp(8), dp(14), dp(20)])
+        box = BoxLayout(orientation="vertical", spacing=dp(GAP_CARDS), size_hint_y=None,
+                        padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(H_NOTE)])
         box.bind(minimum_height=box.setter("height"))
         sv.add_widget(box)
         col.add_widget(sv)
@@ -71,8 +72,8 @@ class SettingsScreen(Overlay):
         # ---- ledger
         p = self.card(S.SET_LEDGER)
         p.add_widget(label(S.SET_LEDGER_SUB.format(addr=short(LEDGER_ADDR)), size_hint_y=None,
-                           height=dp(20), font_size="13sp"))
-        row = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+                           height=dp(H_NOTE), font_size=FONT_SMALL))
+        row = BoxLayout(size_hint_y=None, height=dp(H_BUTTON), spacing=dp(GAP))
         row.add_widget(self.btn(S.BTN_COPY, lambda: self.copy(LEDGER_ADDR)))
         row.add_widget(self.btn(S.BTN_OPEN, lambda: self.open(ETHERSCAN_ADDR + LEDGER_ADDR)))
         p.add_widget(row)
@@ -81,14 +82,14 @@ class SettingsScreen(Overlay):
         # ---- boards
         p = self.card(S.SET_BOARDS)
         for i, b in enumerate(app.boards):
-            r = BoxLayout(size_hint_y=None, height=dp(44))
-            r.add_widget(label("[b]%s[/b] %s" % (escape_markup(b["name"]), short(b["addr"])), font_size="14sp"))
+            r = BoxLayout(size_hint_y=None, height=dp(H_BUTTON))
+            r.add_widget(label("[b]%s[/b] %s" % (escape_markup(b["name"]), short(b["addr"])), font_size=FONT_LABEL))
             if i == 0:
-                r.add_widget(label(S.SET_BOARD_DEFAULT, font_size="12sp", halign="right", color=MUTED,
-                                   size_hint_x=None, width=dp(70)))
+                r.add_widget(label(S.SET_BOARD_DEFAULT, font_size=FONT_NOTE, halign="right", color=MUTED,
+                                   size_hint_x=None, width=dp(W_TAG_COL)))
             else:
-                x = Choice(base=WHITE, fg=BLACK, text="×", bold=True, font_size="18sp",
-                           size_hint=(None, 1), width=dp(44))
+                x = Choice(base=WHITE, fg=BLACK, text=S.CLOSE_X, bold=True, font_size=FONT_BIG,
+                           size_hint=(None, 1), width=dp(H_BUTTON))
                 x.bind(on_release=lambda *_, a=b["addr"]: self.do(lambda: app.remove_board(a)))
                 r.add_widget(x)
             p.add_widget(r)
@@ -99,38 +100,38 @@ class SettingsScreen(Overlay):
         # ---- mind watch
         p = self.card(S.SET_WATCH_HEAD)
         for a in app.watch:
-            r = BoxLayout(size_hint_y=None, height=dp(44))
-            r.add_widget(label(short(a), font_size="14sp"))
-            x = Choice(base=WHITE, fg=BLACK, text="×", bold=True, font_size="18sp",
-                       size_hint=(None, 1), width=dp(44))
+            r = BoxLayout(size_hint_y=None, height=dp(H_BUTTON))
+            r.add_widget(label(short(a), font_size=FONT_LABEL))
+            x = Choice(base=WHITE, fg=BLACK, text=S.CLOSE_X, bold=True, font_size=FONT_BIG,
+                       size_hint=(None, 1), width=dp(H_BUTTON))
             x.bind(on_release=lambda *_, a=a: self.do(lambda: app.remove_watch(a)))
             r.add_widget(x)
             p.add_widget(r)
         self.watch_in = make_input(S.SET_WATCH_HINT, "")
         p.add_widget(self.input_row(self.watch_in, self.btn(S.SET_WATCH_SAVE, self.add_watch, width=72)))
-        p.add_widget(Wrap(text=S.SET_WATCH_NOTE, font_size="12sp", color=MUTED))
+        p.add_widget(Wrap(text=S.SET_WATCH_NOTE, font_size=FONT_NOTE, color=MUTED))
         box.add_widget(p)
 
         # ---- tags
         p = self.card(S.SET_TAGS)
-        row = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
+        row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
         from ui import chip_row
         chips = []
         for t in app.tags:
-            c = Chip("%s ×" % t, base=CHIP_BG)
+            c = Chip(S.CLOSE_X_FMT % t, base=CHIP_BG)
             c.bind(on_release=lambda *_, t=t: self.do(lambda: app.remove_tag(t)))
             chips.append(c)
         if chips:
             p.add_widget(chip_row(chips))
         self.tag_in = make_input(S.SET_TAG_HINT, "")
         p.add_widget(self.input_row(self.tag_in, self.btn(S.SET_TAG_ADD, self.add_tag, width=84)))
-        p.add_widget(Wrap(text=S.SET_TAGS_NOTE, font_size="12sp", color=MUTED))
+        p.add_widget(Wrap(text=S.SET_TAGS_NOTE, font_size=FONT_NOTE, color=MUTED))
         box.add_widget(p)
 
         box.add_widget(Card(S.SET_VERSION.format(build=escape_markup(BUILD)), bg=CREAM))
 
     def btn_full(self, text, fn):
-        b = Choice(base=BLUE, fg=WHITE, text=text, bold=True, size_hint_y=None, height=dp(44))
+        b = Choice(base=BLUE, fg=WHITE, text=text, bold=True, size_hint_y=None, height=dp(H_BUTTON))
         b.bind(on_release=lambda *_: fn())
         return b
 

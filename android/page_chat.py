@@ -81,9 +81,9 @@ class ChatPage(FeedPage):
             parts = [S.M_YOU if mine else short(m["signer"])]
             if len(m["lines"]) > 1:
                 parts.append(S.M_LINES.format(n=len(m["lines"])))
-            parts.append("code [b]%s[/b]" % m["code"])
+            parts.append(S.M_CODE_CAPTION.format(code=m["code"]))
             parts.append(S.M_BLOCK.format(block=m["block"]))
-            item = ChatItem(m["lines"], mine, " · ".join(parts))
+            item = ChatItem(m["lines"], mine, S.SEP.join(parts))
             b.add_widget(self.tappable(item, m))
             if self.ui.get("sel") == m["id"]:
                 b.add_widget(self.detail(m))

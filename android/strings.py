@@ -806,3 +806,9 @@ CMP_NO_TYPED = ("Your wallet link did not allow typed-data signing (eth_signType
                 "request never reached the wallet. The link was reset. Tap Sign again: the wallet asks "
                 "to connect, accept the signing permission. If this repeats, this wallet cannot sign "
                 "typed data: connect another wallet app.")
+
+SEP = " \u00b7 "                     # separator in the small grey lines
+CLOSE_X = "\u00d7"
+CLOSE_X_FMT = "%s \u00d7"
+M_CODE_CAPTION = "code [b]{code}[/b]"
+M_BOARD_FALLBACK = "Board"

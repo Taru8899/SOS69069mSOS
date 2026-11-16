@@ -15,6 +15,7 @@ from kivy.utils import escape_markup
 import core
 import feed as F
 import strings as S
+from design import BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
 import tx
 from design import CHIP_BG, CODE_BG, CREAM, DARK_GREEN, LIGHT_BLUE, LIGHT_GREEN, MUTED
 from theme import BLACK, BLUE, MAX_LINES, RED, WHITE, short
@@ -75,24 +76,24 @@ class ComposeScreen(Overlay):
         app = self.app
         col = self.col
         col.clear_widgets()
-        head = BoxLayout(size_hint_y=None, height=dp(64), padding=[dp(14), dp(6)], spacing=dp(14))
-        back = IconBtn(icon="back", bg=WHITE, color=BLACK, size_hint=(None, 1), width=dp(56))
+        head = BoxLayout(size_hint_y=None, height=dp(H_PAGE_BAR), padding=[dp(PAD_PAGE), dp(GAP_SMALL)], spacing=dp(PAD_PAGE))
+        back = IconBtn(icon="back", bg=WHITE, color=BLACK, size_hint=(None, 1), width=dp(W_BACK))
         back.bind(on_release=lambda *_: self.close())
         head.add_widget(back)
-        head.add_widget(label(S.CMP_TITLE, font_size="24sp"))
+        head.add_widget(label(S.CMP_TITLE, font_size=FONT_TITLE))
         col.add_widget(head)
 
         sv = ScrollView(do_scroll_x=False, bar_width=0)
-        box = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None,
-                        padding=[dp(14), dp(8), dp(14), dp(16)])
+        box = BoxLayout(orientation="vertical", spacing=dp(GAP_CARDS), size_hint_y=None,
+                        padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(PAD_BOTTOM)])
         box.bind(minimum_height=box.setter("height"))
         sv.add_widget(box)
         col.add_widget(sv)
 
         # ---- send to
-        p = Panel(orientation="vertical", size_hint_y=None, height=dp(98), spacing=dp(6),
-                  padding=[dp(12), dp(10)])
-        p.add_widget(label(S.CMP_SEND_TO, size_hint_y=None, height=dp(18), font_size="12sp", color=MUTED))
+        p = Panel(orientation="vertical", size_hint_y=None, height=dp(H_SENDTO), spacing=dp(GAP_SMALL),
+                  padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+        p.add_widget(label(S.CMP_SEND_TO, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE, color=MUTED))
         chips = []
         for b in app.boards:
             on = self.kind == "board" and self.addr.lower() == b["addr"].lower()
@@ -111,40 +112,40 @@ class ComposeScreen(Overlay):
         # ---- reply target
         if self.reply:
             r = self.reply
-            rp = Panel(bg=LIGHT_BLUE, size_hint_y=None, height=dp(74), spacing=dp(12),
-                       padding=[dp(12), dp(10)])
-            code = Label(text=r["code"], bold=True, color=WHITE, font_size="16sp",
-                         size_hint=(None, None), size=(dp(52), dp(48)))
+            rp = Panel(bg=LIGHT_BLUE, size_hint_y=None, height=dp(H_REPLY_CARD), spacing=dp(PAD_CARD),
+                       padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+            code = Label(text=r["code"], bold=True, color=WHITE, font_size=FONT_MEDIUM,
+                         size_hint=(None, None), size=(dp(H_BUTTON_BIG), dp(H_FIELD)))
             from kivy.graphics import Color, RoundedRectangle
             with code.canvas.before:
                 Color(*BLUE)
-                rr = RoundedRectangle(radius=[dp(12)])
+                rr = RoundedRectangle(radius=[dp(PAD_CARD)])
             code.bind(pos=lambda i, v, rr=rr: setattr(rr, "pos", v), size=lambda i, v, rr=rr: setattr(rr, "size", v))
             rp.add_widget(code)
             mid = BoxLayout(orientation="vertical")
             mid.add_widget(label(S.CMP_REPLYING.format(who=short(r["signer"]), block=r["block"]),
-                                 font_size="12sp", color=MUTED))
-            mid.add_widget(label("[b]%s[/b]" % escape_markup(r["lines"][0][:60]), font_size="15sp"))
+                                 font_size=FONT_NOTE, color=MUTED))
+            mid.add_widget(label("[b]%s[/b]" % escape_markup(r["lines"][0][:60]), font_size=FONT_MSG))
             rp.add_widget(mid)
             box.add_widget(rp)
 
         # ---- lines
-        lp = Panel(orientation="vertical", size_hint_y=None, spacing=dp(8), padding=[dp(12), dp(12)])
+        lp = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP), padding=[dp(PAD_CARD), dp(PAD_CARD)])
         lp.bind(minimum_height=lp.setter("height"))
-        top = BoxLayout(size_hint_y=None, height=dp(22))
-        top.add_widget(label("[b]%s[/b]" % S.CMP_LINES, font_size="14sp"))
-        top.add_widget(label(S.CMP_LINES_HINT, font_size="11sp", halign="right", color=MUTED))
+        top = BoxLayout(size_hint_y=None, height=dp(H_HEADING))
+        top.add_widget(label("[b]%s[/b]" % S.CMP_LINES, font_size=FONT_LABEL))
+        top.add_widget(label(S.CMP_LINES_HINT, font_size=FONT_TINY, halign="right", color=MUTED))
         lp.add_widget(top)
         self.inputs, self.counters = [], []
         for i, text in enumerate(self.lines):
-            row = BoxLayout(size_hint_y=None, height=dp(48), spacing=dp(8))
-            row.add_widget(Dot(bg=BLACK, text=str(i + 1), color=WHITE, size=(dp(28), dp(28)),
-                               pos_hint={"center_y": 0.5}, font_size="13sp"))
+            row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
+            row.add_widget(Dot(bg=BLACK, text=str(i + 1), color=WHITE, size=(dp(D_STEP), dp(D_STEP)),
+                               pos_hint={"center_y": 0.5}, font_size=FONT_SMALL))
             ti = make_input(S.CMP_LINE_HINT.format(n=i + 1), text)
             ti.bind(text=lambda inst, v, i=i: self.on_line(i, v))
             self.inputs.append(ti)
             row.add_widget(ti)
-            cnt = Label(text="", font_size="11sp", color=MUTED, size_hint=(None, 1), width=dp(46),
+            cnt = Label(text="", font_size=FONT_TINY, color=MUTED, size_hint=(None, 1), width=dp(W_COUNTER),
                         halign="right", valign="middle")
             cnt.bind(size=lambda inst, s: setattr(inst, "text_size", s))
             self.counters.append(cnt)
@@ -154,33 +155,33 @@ class ComposeScreen(Overlay):
         for t in app.tags:
             tools.append(self.mk_chip(t, lambda t=t: self.add_tag(t)))
         lp.add_widget(chip_row(tools))
-        lp.add_widget(Wrap(text=S.CMP_LINES_NOTE, font_size="12sp", color=MUTED))
+        lp.add_widget(Wrap(text=S.CMP_LINES_NOTE, font_size=FONT_NOTE, color=MUTED))
         box.add_widget(lp)
 
         # ---- you will sign
-        sp = Panel(orientation="vertical", size_hint_y=None, spacing=dp(4), padding=[dp(12), dp(12)])
+        sp = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP_TINY), padding=[dp(PAD_CARD), dp(PAD_CARD)])
         sp.bind(minimum_height=sp.setter("height"))
-        sp.add_widget(label("[b]%s[/b]" % S.CMP_SIGN_HEAD, size_hint_y=None, height=dp(24), font_size="14sp"))
+        sp.add_widget(label("[b]%s[/b]" % S.CMP_SIGN_HEAD, size_hint_y=None, height=dp(H_LINE), font_size=FONT_LABEL))
         self.sum = {}
         for key, name in (("from", S.CMP_FROM), ("to", S.CMP_TO), ("code", S.CMP_CODE),
                           ("records", S.CMP_RECORDS), ("asks", S.CMP_ASKS), ("gas", S.CMP_GAS)):
-            r = BoxLayout(size_hint_y=None, height=dp(24))
-            r.add_widget(label(name, font_size="13sp", color=MUTED))
-            v = label("", font_size="13sp", halign="right")
+            r = BoxLayout(size_hint_y=None, height=dp(H_LINE))
+            r.add_widget(label(name, font_size=FONT_SMALL, color=MUTED))
+            v = label("", font_size=FONT_SMALL, halign="right")
             self.sum[key] = v
             r.add_widget(v)
             sp.add_widget(r)
         box.add_widget(sp)
         box.add_widget(Card(S.CMP_NOTE, bg=CREAM))
 
-        self.status_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(6))
+        self.status_box = BoxLayout(orientation="vertical", size_hint_y=None, spacing=dp(GAP_SMALL))
         self.status_box.bind(minimum_height=self.status_box.setter("height"))
         box.add_widget(self.status_box)
 
-        btns = BoxLayout(size_hint_y=None, height=dp(52), spacing=dp(10))
-        cancel = Choice(base=WHITE, fg=BLACK, text=S.CMP_CANCEL, bold=True, size_hint=(None, 1), width=dp(96))
+        btns = BoxLayout(size_hint_y=None, height=dp(H_BUTTON_BIG), spacing=dp(GAP_CARDS))
+        cancel = Choice(base=WHITE, fg=BLACK, text=S.CMP_CANCEL, bold=True, size_hint=(None, 1), width=dp(W_CANCEL))
         cancel.bind(on_release=lambda *_: self.close())
-        self.go = Choice(base=BLUE, fg=WHITE, text="", bold=True, font_size="16sp")
+        self.go = Choice(base=BLUE, fg=WHITE, text="", bold=True, font_size=FONT_MEDIUM)
         self.go.bind(on_release=lambda *_: self.sign())
         btns.add_widget(cancel)
         btns.add_widget(self.go)
@@ -260,7 +261,7 @@ class ComposeScreen(Overlay):
             return
         kind, addr = self.destination()
         if kind == "board":
-            name = next((b["name"] for b in self.app.boards if b["addr"].lower() == addr.lower()), "Board")
+            name = next((b["name"] for b in self.app.boards if b["addr"].lower() == addr.lower()), S.M_BOARD_FALLBACK)
             to = S.CMP_TO_BOARD.format(name=name, addr=short(addr))
         elif kind == "mind":
             to = S.CMP_TO_MIND.format(addr=short(addr) or "?")
@@ -270,7 +271,7 @@ class ComposeScreen(Overlay):
         n = len(lines)
         self.sum["from"].text = "[b]%s[/b]" % (short(self.app.my) or "?")
         self.sum["to"].text = "[b]%s[/b]" % to
-        self.sum["code"].text = "[color=0033ff][b]%s[/b][/color]" % self.code
+        self.sum["code"].text = "[color=%s][b]%s[/b][/color]" % (BLUE_HEX, self.code)
         self.sum["records"].text = "[b]%s[/b]" % (S.CMP_RECORDS_V.format(n=n) if n != 1 else S.CMP_ONE_RECORD_V)
         self.sum["asks"].text = "[b]%s[/b]" % (S.CMP_ASKS_V.format(n=n) if n != 1 else S.CMP_ASKS_ONE)
         self.sum["gas"].text = "[b]%s[/b]" % S.CMP_GAS_V

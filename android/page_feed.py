@@ -10,6 +10,7 @@ from kivy.utils import escape_markup
 import core
 import feed as F
 import strings as S
+from design import FONT_LABEL, FONT_NOTE, FONT_SMALL, GAP, GAP_SMALL, H_BUTTON, H_DETAIL, H_FIELD, H_LINE, H_NOTE
 import util
 from theme import BLACK, BLUE, ETHERSCAN_TX, PAGE_SIZE, WHITE, short
 from ui import Wrap, pill_button
@@ -113,7 +114,7 @@ class FeedPage:
         if slot.error and slot.feed is None:
             b.add_widget(Card(S.M_ERROR.format(error=escape_markup(slot.error))))
             retry = Choice(base=BLUE, fg=WHITE, text=S.BTN_RETRY, bold=True, size_hint_y=None,
-                           height=dp(48))
+                           height=dp(H_FIELD))
             retry.bind(on_release=lambda *_: self.retry())
             b.add_widget(retry)
             return
@@ -133,7 +134,7 @@ class FeedPage:
 
     def footer_note(self, feed):
         return label(S.M_COMPLETE if feed.complete else S.M_WINDOW.format(lo=feed.lo or 0, hi=feed.latest),
-                     size_hint_y=None, height=dp(20), font_size="12sp", halign="center")
+                     size_hint_y=None, height=dp(H_NOTE), font_size=FONT_NOTE, halign="center")
 
     # ---- paging
     def shown(self):
@@ -168,15 +169,15 @@ class FeedPage:
         self.app.open_compose(dest=(kind, addr), reply=m)
 
     def detail(self, m):
-        p = Panel(orientation="vertical", size_hint_y=None, height=dp(228), spacing=dp(6))
+        p = Panel(orientation="vertical", size_hint_y=None, height=dp(H_DETAIL), spacing=dp(GAP_SMALL))
         p.add_widget(Wrap(text="[size=12sp]%s[/size]\n[b]%s[/b]" % (S.M_DETAIL_TX, short(m["tx"])),
-                          font_size="14sp"))
+                          font_size=FONT_LABEL))
         p.add_widget(label("[size=12sp]%s[/size] %s   [size=12sp]%s[/size] %s" % (
             S.M_DETAIL_FROM, short(m["signer"]), S.M_DETAIL_TO, short(m["to"])),
-            size_hint_y=None, height=dp(24), font_size="13sp"))
-        self.msg = label("", size_hint_y=None, height=dp(20), font_size="12sp")
+            size_hint_y=None, height=dp(H_LINE), font_size=FONT_SMALL))
+        self.msg = label("", size_hint_y=None, height=dp(H_NOTE), font_size=FONT_NOTE)
         p.add_widget(self.msg)
-        btns = BoxLayout(size_hint_y=None, height=dp(44), spacing=dp(8))
+        btns = BoxLayout(size_hint_y=None, height=dp(H_BUTTON), spacing=dp(GAP))
         cp = Choice(base=BLUE, fg=WHITE, text=S.BTN_COPY, bold=True)
         cp.bind(on_release=lambda *_: self.copy(m["tx"]))
         op = Choice(base=BLUE, fg=WHITE, text=S.M_BTN_ETHERSCAN, bold=True)
@@ -185,7 +186,7 @@ class FeedPage:
         btns.add_widget(op)
         p.add_widget(btns)
         rp = Choice(base=BLACK, fg=WHITE, text="%s %s" % (S.M_BTN_REPLY, m["code"]), bold=True,
-                    size_hint_y=None, height=dp(44))
+                    size_hint_y=None, height=dp(H_BUTTON))
         rp.bind(on_release=lambda *_: self.reply(m))
         p.add_widget(rp)
         return p
@@ -211,4 +212,4 @@ class FeedPage:
         parts.extend(extras)
         if m["n_replies"]:
             parts.append(S.M_REPLIES.format(n=m["n_replies"]))
-        return " · ".join(parts)
+        return S.SEP.join(parts)

@@ -158,3 +158,44 @@ def ensure_fields(folder):
         return a, b
     except Exception:  # noqa: BLE001
         return None
+
+
+# ================================================================== mSOS pages: sizes in one place
+# fonts
+FONT_TINY = "11sp"         # counters, small captions
+FONT_NOTE = "12sp"         # grey notes, sub lines, chat captions
+FONT_LABEL = "14sp"        # card headings, rows
+FONT_MSG = "15sp"          # message text, bubbles
+FONT_MEDIUM = "16sp"       # reply code, main buttons
+# markup colours (hex for [color=..])
+BLUE_HEX = "0033ff"        # reply codes (@code)
+RED_HEX = "b00021"         # negative effective score
+# spacing and sizes (dp)
+LINE_W = 1.5               # outline width of dashed bubble / outline chip
+GAP_HAIR = 2
+GAP_PIXEL = 3
+GAP_TINY = 4
+GAP_SMALL = 6
+GAP = 8                    # space between neighbours
+GAP_CARDS = 10             # space between cards
+PAD_CARD = 12              # padding inside a card
+PAD_PAGE = 14              # side margin of a page
+PAD_BOTTOM = 16
+H_HINT = 18
+H_NOTE = 20
+H_HEADING = 22
+H_LINE = 24                # one summary row
+D_STEP = 28                # round line number
+H_LABEL_ROW = 30
+H_BUTTON = 44              # chips, small buttons
+W_COUNTER = 46             # "31/64"
+H_FIELD = 48               # input row
+H_BUTTON_BIG = 52          # Cancel / Sign
+W_BACK = 56                # back button
+H_PAGE_BAR = 64            # title bar of Settings / New message
+W_TAG_COL = 70
+W_BTN_SMALL = 72           # Add / Save
+H_REPLY_CARD = 74
+W_CANCEL = 96
+H_SENDTO = 98
+H_DETAIL = 228             # message details panel

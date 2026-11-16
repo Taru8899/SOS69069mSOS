@@ -154,7 +154,8 @@ class MsosApp(App):
         d = dp(FAB_D + 6)                                  # IconBtn draws its circle 6 dp smaller
         self.fab = IconBtn(icon="plus", bg=BLUE, color=WHITE, icon_size=30, size_hint=(None, None),
                            size=(d, d), pos_hint={"center_x": 0.5})
-        self.fab.y = dp(NAV_H + FAB_GAP - 3)
+        # Keep the FAB clearly above the nav bar (was NAV_H + FAB_GAP - 3, which looked fused).
+        self.fab.y = dp(NAV_H + FAB_GAP + 10)
         self.fab.bind(on_release=lambda *_: self.open_compose())
         root.add_widget(self.fab)
 

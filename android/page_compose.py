@@ -281,8 +281,18 @@ class ComposeScreen(Overlay):
         self.go.set_enabled(True)
         if is_rejection(text, code):
             self.show(S.CMP_REJECTED, bg=RED, fg=WHITE)
-        else:
-            self.show(S.TX_ERROR.format(error=escape_markup(str(text))), bg=RED, fg=WHITE)
+            return
+        msg = str(text or "")
+        # Common WalletConnect / mobile-wallet failure: method not advertised
+        low = msg.lower()
+        if "eth_signtypeddata_v4" in low or "does not exist" in low or "not available" in low:
+            msg = (
+                "This wallet does not support eth_signTypedData_v4 (EIP-712). "
+                "Open the session again with a wallet that does (MetaMask, Rabby, "
+                "Rainbow, Trust, etc.), or disconnect and reconnect after updating "
+                "the wallet app. Original error: " + msg
+            )
+        self.show(S.TX_ERROR.format(error=escape_markup(msg)), bg=RED, fg=WHITE)
 
     def close(self):
         self.alive = False

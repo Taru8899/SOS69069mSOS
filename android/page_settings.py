@@ -185,7 +185,9 @@ class SettingsScreen(Overlay):
         if not tx.valid_address(a):
             return self.say(S.SET_BAD_ADDR)
         self.app.add_watch(a)
-        self.say("")
+        # Clear the field and force a full rebuild so the new chip appears immediately.
+        self.watch_in.text = ""
+        self.say("Watched " + a[:10] + "…")
 
     def add_tag(self):
         t = self.tag_in.text.strip().lstrip("#").lower().replace(" ", "-")

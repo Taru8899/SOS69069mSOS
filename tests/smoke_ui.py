@@ -177,6 +177,16 @@ def test_everything():
         pg.build()
         print("ok page", page, len(app.box.children), "widgets")
     app.render()
+    app.addr_in.text, app.key_in.text = ME, "KEY"
+    app.load()
+    assert app.my == ME and app.es_key == "KEY" and not app.drawer_open
+    app.addr_in.text = "bad"
+    app.load()
+    assert app.my == ME                       # a bad address is refused, the old one stays
+    app.toggle_drawer()
+    assert app.drawer_open
+    app.toggle_drawer()
+    app.exit_wallet()
     app.open_settings()
     app.close_all()
     app.open_compose()

@@ -29,8 +29,9 @@ from core import LEDGER
 B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 REPLY_RE = re.compile(r"^\s*@([0-9a-z]{3})(?![0-9a-z])", re.I)
 TAG_RE = re.compile(r"(?<![\w#])#([\w-]{1,30})")
-FIRST_PAGE = 10          # try to have at least this many messages after the first load
-MAX_EXTRA_STEPS = 3      # extra older windows fetched at start while the first page is not full
+MIN_FIRST = 4            # a first load keeps looking further back until it has this many messages
+SEARCH_SECONDS = 40      # ... but never longer than this (public nodes are slow; then Load more)
+MAX_SPAN = 2_000_000     # largest Etherscan window (blocks) after several empty ones
 
 __all__ = ["decode_record", "group", "code_of", "reply_code", "tags_of", "Feed", "queries",
            "sort_newest", "sort_eff", "sort_replies", "with_tag", "eff_at_least", "ago"]
@@ -155,6 +156,17 @@ def eff_at_least(msgs, n):
 
 
 # ------------------------------------------------------------------ queries
+def chat_members(params):
+    """Lower-case addresses of a conversation: me first, then the others (no duplicates)."""
+    others = params.get("peers") or ([params["peer"]] if params.get("peer") else [])
+    out = []
+    for a in [params["me"]] + list(others):
+        a = (a or "").lower()
+        if a and a not in out:
+            out.append(a)
+    return out
+
+
 def queries(kind, params):
     """List of topic lists (all for the ledger address) that make up a view."""
     if kind == "board":
@@ -162,8 +174,9 @@ def queries(kind, params):
     if kind == "mind":
         return [[T_RECORDED, pad_topic(a), pad_topic(a)] for a in params["addrs"]]
     if kind == "chat":
-        a, b = pad_topic(params["me"]), pad_topic(params["peer"])
-        return [[T_RECORDED, a, b], [T_RECORDED, b, a]]
+        # every ordered pair of the conversation: me and each other address, and the others among themselves
+        members = chat_members(params)
+        return [[T_RECORDED, pad_topic(a), pad_topic(b)] for a in members for b in members if a != b]
     raise ValueError(kind)
 
 
@@ -182,6 +195,8 @@ class Feed:
         self.exact = self.use_es
         self.note = ""
         self.eff = {}                 # address -> effective score (int) or None when unknown
+        self.span = WINDOW_BLOCKS     # Etherscan Board window; doubles after an empty one
+        self.counter = None           # optional: records -> number of messages that count for MIN_FIRST
 
     # -- fetching
     def _add(self, logs):
@@ -205,9 +220,13 @@ class Feed:
         Etherscan (key): Board = 7 days per step, Mind and Chat = the whole history at once.
         Public nodes: about 2 days per step."""
         if self.use_es:
-            lo = max(0, hi - WINDOW_BLOCKS + 1) if self.kind == "board" else 0
+            lo = max(0, hi - self.span + 1) if self.kind == "board" else 0
             try:
+                before = len(self.records)
                 self._fetch_es(lo, hi)
+                if self.kind == "board":
+                    # nothing in this window: look twice as far next time; found something: back to 7 days
+                    self.span = min(self.span * 2, MAX_SPAN) if len(self.records) == before else WINDOW_BLOCKS
                 return lo
             except Exception as e:  # noqa: BLE001
                 self.note = S.M_ES_FAILED.format(error=str(e) or type(e).__name__)
@@ -224,12 +243,18 @@ class Feed:
         self.latest = self.chain.block()
         self.use_es = bool(self.chain.api_key)
         self.exact = self.use_es
+        self.span = WINDOW_BLOCKS
         self.lo = self._load(self.latest)
         self.complete = self.lo == 0
-        steps = 0
-        while not self.complete and steps < MAX_EXTRA_STEPS and len(self.messages()) < FIRST_PAGE:
+        t0 = time.time()
+        # always try to have MIN_FIRST messages: go further back until found, the start of the
+        # ledger is reached, or the time budget is used up
+        while not self.complete and self.count() < MIN_FIRST and time.time() - t0 < SEARCH_SECONDS:
             self.older()
-            steps += 1
+
+    def count(self):
+        msgs = self.messages()
+        return self.counter(msgs) if self.counter else len(msgs)
 
     def older(self):
         if self.complete or self.lo is None:

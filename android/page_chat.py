@@ -1,28 +1,37 @@
-"""Chat: the classic A to B / B to A conversation between your address (A) and one other address
-(B). Newest messages at the bottom; Load older (10) at the top."""
+"""Chat: a conversation between your address (A) and one or more other addresses (B, C ...). Every
+message is an SOS record signed by one of them to another one ("intended to"); the page reads every
+pair of the conversation and shows them by block time, newest at the bottom."""
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
 
 import feed as F
 import strings as S
+import tx
+import util
+from design import FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_CONV_CARD, H_FIELD, H_HINT, MUTED, PAD_CARD
 from page_feed import FeedPage
-from theme import short
+from theme import BLACK, BLUE, WHITE, short
 from ui import ChatItem, block_head, chip, chip_row
-from widgets import Card, label
+from widgets import Card, Choice, Panel, label, make_input
 
 
 class ChatPage(FeedPage):
     kind = "chat"
 
     def peer(self):
+        """The selected conversation: its key (the other addresses joined by a comma) or ''."""
         p = (self.ui.get("peer") or "").lower()
-        if p not in [c.lower() for c in self.app.chats]:
-            p = self.app.chats[0].lower() if self.app.chats else ""
+        if p not in self.app.chats:
+            p = self.app.chats[0] if self.app.chats else ""
             self.ui["peer"] = p
         return p
 
+    def peers(self):
+        return self.app.conv_peers(self.peer())
+
     def params(self):
-        return {"me": self.app.my.lower(), "peer": self.peer()}
+        return {"me": self.app.my.lower(), "peers": self.peers()}
 
     def not_ready(self):
         if not self.app.my:
@@ -32,30 +41,104 @@ class ChatPage(FeedPage):
         return ""
 
     def reply_dest(self):
-        return ("chat", self.peer())
+        p = self.peers()
+        return ("chat", p[0] if p else "")
+
+    def reply(self, m):
+        me = self.app.my.lower()
+        to = m["to"] if m["signer"] == me else m["signer"]
+        self.app.open_compose(dest=("chat", to), reply=m)
+
+    # ---- the "Chat with" card: type or paste an address, start a chat or add it to this one
+    def conv_card(self):
+        app, ui = self.app, self.ui
+        p = Panel(orientation="vertical", size_hint_y=None, height=dp(H_CONV_CARD), spacing=dp(GAP_SMALL),
+                  padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+        p.add_widget(label(S.CHAT_CONV_HEAD, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE,
+                           color=MUTED))
+        row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
+        self.addr_in = make_input(S.CHAT_ADDR_HINT, ui.get("chat_addr", ""))
+        self.addr_in.bind(text=lambda i, v: ui.__setitem__("chat_addr", v.strip()))
+        row.add_widget(self.addr_in)
+        paste = Choice(base=BLUE, fg=WHITE, text=S.BTN_PASTE, bold=True, size_hint=(None, 1), width=dp(72))
+        paste.bind(on_release=lambda *_: self.paste())
+        row.add_widget(paste)
+        p.add_widget(row)
+        btns = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
+        new = Choice(base=BLUE, fg=WHITE, text=S.CHAT_BTN_NEW, bold=True)
+        new.bind(on_release=lambda *_: self.new_chat())
+        btns.add_widget(new)
+        if self.peer():
+            add = Choice(base=BLACK, fg=WHITE, text=S.CHAT_BTN_ADD, bold=True)
+            add.bind(on_release=lambda *_: self.add_here())
+            btns.add_widget(add)
+        p.add_widget(btns)
+        return p
+
+    def paste(self):
+        t = util.paste_text()
+        if t:
+            self.ui["chat_addr"] = t.strip()
+            self.addr_in.text = t.strip()
+        else:
+            self.app.say(S.MSG_CLIPBOARD_EMPTY)
+
+    def typed(self):
+        a = (self.ui.get("chat_addr") or "").strip().lower()
+        if not tx.valid_address(a):
+            self.app.say(S.CHAT_BAD_ADDR)
+            return ""
+        if a == self.app.my.lower():
+            self.app.say(S.CHAT_SELF)
+            return ""
+        return a
+
+    def new_chat(self):
+        a = self.typed()
+        if not a:
+            return
+        key = self.app.conv_with(a) or a
+        self.app.add_chat(a)
+        self.ui["peer"], self.ui["chat_addr"], self.ui["sel"] = key, "", None
+        self.app.render()
+
+    def add_here(self):
+        a = self.typed()
+        if not a:
+            return
+        err = self.app.add_to_chat(self.peer(), a)
+        if err:
+            self.app.say(err)
+            return
+        self.ui["chat_addr"] = ""
+        self.app.render()
 
     def chips(self):
         app, ui = self.app, self.ui
         cur = self.peer()
-        peers = [chip(short(a), lambda a=a: app.set_peer(a), selected=a.lower() == cur)
-                 for a in app.chats]
-        peers.append(chip(S.CHAT_NEW, lambda: app.open_compose(dest=("chat", ""), reply=None), kind="action"))
+        convs = [chip(S.CHAT_PLUS.join(short(a) for a in app.conv_peers(c)),
+                      lambda c=c: app.set_peer(c), selected=c == cur) for c in app.chats]
+        if cur:
+            convs.append(chip(S.CHAT_REMOVE, lambda: app.remove_chat(cur), kind="outline"))
         row2 = [chip(text, lambda k=key: app.set_sort("chat_filter", k),
                      selected=ui.get("chat_filter", "all") == key) for key, text in S.CHAT_FILTERS]
-        return [chip_row(peers), chip_row(row2)]
+        out = [self.conv_card()]
+        if convs:
+            out.append(chip_row(convs))
+        out.append(chip_row(row2))
+        return out
 
     def arrange(self, msgs):
-        me, peer = self.app.my.lower(), self.peer()
+        me = self.app.my.lower()
+        members = set([me] + self.peers())
         flt = self.ui.get("chat_filter", "all")
         out = []
         for m in msgs:
-            sent = m["signer"] == me and m["to"] == peer
-            recv = m["signer"] == peer and m["to"] == me
-            if not (sent or recv):
+            if m["signer"] not in members or m["to"] not in members or m["signer"] == m["to"]:
                 continue
-            if flt == "sent" and not sent:
+            if flt == "sent" and m["signer"] != me:
                 continue
-            if flt == "recv" and not recv:
+            if flt == "recv" and m["to"] != me:
                 continue
             if flt == "replies" and not m["reply_to"]:
                 continue
@@ -78,7 +161,12 @@ class ChatPage(FeedPage):
                 b.add_widget(block_head(m, F.when(m["ts"])))
                 last_block = m["block"]
             mine = m["signer"] == me
-            parts = [S.M_YOU if mine else short(m["signer"])]
+            who = S.M_YOU if mine else short(m["signer"])
+            if len(self.peers()) > 1 or (m["to"] != me and not mine):
+                who = S.CHAT_ARROW.format(a=who, b=S.M_YOU if m["to"] == me else short(m["to"]))
+            elif not mine:
+                who = short(m["signer"])
+            parts = [who]
             if len(m["lines"]) > 1:
                 parts.append(S.M_LINES.format(n=len(m["lines"])))
             parts.append(S.M_CODE_CAPTION.format(code=m["code"]))
@@ -88,7 +176,7 @@ class ChatPage(FeedPage):
             if self.ui.get("sel") == m["id"]:
                 b.add_widget(self.detail(m))
         for p in self.app.pending:                          # sent, not in a block yet
-            if p["kind"] == "chat" and p["to"].lower() == self.peer():
+            if p["kind"] == "chat" and p["to"].lower() in self.peers():
                 b.add_widget(ChatItem(p["lines"], True, S.M_PENDING, pending=True))
         b.add_widget(self.footer_note(feed))
         Clock.schedule_once(lambda dt: setattr(self.app.sv, "scroll_y", 0), 0.1)

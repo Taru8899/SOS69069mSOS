@@ -199,3 +199,7 @@ H_REPLY_CARD = 74
 W_CANCEL = 96
 H_SENDTO = 98
 H_DETAIL = 228             # message details panel
+
+H_TO_CARD = 160            # compose, Chat: "Send to" label + recipient chips + address field
+H_CONV_CARD = 190          # Chat page: "Chat with" label + address field + New chat / Add buttons
+FAB_CLEAR = FAB_D          # free space under the last row so the floating + never hides it

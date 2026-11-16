@@ -15,8 +15,9 @@ from kivy.utils import escape_markup
 import core
 import feed as F
 import strings as S
-from design import BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
+from design import FAB_CLEAR, H_TO_CARD, BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
 import tx
+import util
 from design import CHIP_BG, CODE_BG, CREAM, DARK_GREEN, LIGHT_BLUE, LIGHT_GREEN, MUTED
 from theme import BLACK, BLUE, MAX_LINES, RED, WHITE, short
 from ui import Chip, Wrap, chip_row
@@ -61,7 +62,12 @@ class ComposeScreen(Overlay):
         self.kind, self.addr = dest[0], dest[1]
         if self.kind == "mind":
             self.addr = app.my
-        self.peer_text = self.addr if self.kind == "chat" else (app.ui.get("peer") or "")
+        # a chat destination may be a whole conversation ("0xB,0xC"): the recipient is one of them
+        self.conv = app.conv_peers(self.addr) if self.kind == "chat" else app.conv_peers(app.ui.get("peer"))
+        self.peer_text = self.conv[0] if self.conv else ""
+        if self.kind == "chat" and self.addr and "," not in self.addr:
+            self.peer_text = self.addr
+        self.step = ""
         self.lines = [""]
         self.inputs = []
         self.counters = []
@@ -85,7 +91,7 @@ class ComposeScreen(Overlay):
 
         sv = ScrollView(do_scroll_x=False, bar_width=0)
         box = BoxLayout(orientation="vertical", spacing=dp(GAP_CARDS), size_hint_y=None,
-                        padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(PAD_BOTTOM)])
+                        padding=[dp(PAD_PAGE), dp(GAP), dp(PAD_PAGE), dp(PAD_BOTTOM + FAB_CLEAR)])
         box.bind(minimum_height=box.setter("height"))
         sv.add_widget(box)
         col.add_widget(sv)
@@ -105,9 +111,23 @@ class ComposeScreen(Overlay):
         p.add_widget(chip_row(chips))
         box.add_widget(p)
         if self.kind == "chat":
+            # who the record is sent to (its "intended to"): one of the chat's addresses, or any address
+            tp = Panel(orientation="vertical", size_hint_y=None, height=dp(H_TO_CARD), spacing=dp(GAP_SMALL),
+                       padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+            tp.add_widget(label(S.CHAT_PICK_TO, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE,
+                                color=MUTED))
+            who = []
+            for a in self.conv:
+                c = Chip(short(a), base=CHIP_BG)
+                c.set_selected(a == self.peer_text.lower())
+                c.bind(on_release=lambda _i, a=a: self.pick_peer(a))
+                who.append(c)
+            if who:
+                tp.add_widget(chip_row(who))
             self.peer_in = make_input(S.CMP_PEER_HINT, self.peer_text)
             self.peer_in.bind(text=self.on_peer)
-            box.add_widget(self.peer_in)
+            tp.add_widget(self.peer_in)
+            box.add_widget(tp)
 
         # ---- reply target
         if self.reply:
@@ -212,6 +232,12 @@ class ComposeScreen(Overlay):
             self.peer_text = dest[1] or self.peer_text
         self.rebuild()
 
+    def pick_peer(self, a):
+        if self.busy:
+            return
+        self.peer_text = a
+        self.rebuild()
+
     def on_peer(self, inst, v):
         self.peer_text = v.strip()
         self.update_summary()
@@ -278,6 +304,8 @@ class ComposeScreen(Overlay):
         self.go.text = S.CMP_SIGN_N.format(n=n) if n != 1 else S.CMP_SIGN_ONE
         if n == 0:
             self.go.text = S.CMP_SIGN_N.format(n=0)
+        if not self.busy:
+            self.go.set_enabled(n > 0)             # nothing to sign: the button waits for a first line
 
     # ------------------------------------------------------------ status
     def show(self, text, bg=CREAM, fg=BLACK):
@@ -300,7 +328,18 @@ class ComposeScreen(Overlay):
                 pass
             self.show(S.CMP_NO_TYPED, bg=RED, fg=WHITE)
         else:
-            self.show(S.TX_ERROR.format(error=escape_markup(str(text))), bg=RED, fg=WHITE)
+            wallet = self.app.wallet.label()
+            self.show(S.CMP_ERR_STEP.format(step=self.step or "?", error=escape_markup(str(text)),
+                                            code=code if code is not None else "-", wallet=wallet),
+                      bg=RED, fg=WHITE)
+            plain = "%s | %s | code %s | %s" % (self.step, text, code, wallet)
+            cp = Choice(base=WHITE, fg=BLACK, text=S.CMP_COPY_ERR, bold=True, size_hint_y=None,
+                        height=dp(H_FIELD))
+            cp.bind(on_release=lambda *_: self.show_copy(plain))
+            self.status_box.add_widget(cp)
+
+    def show_copy(self, plain):
+        self.show(S.CMP_ERR_COPIED if util.copy_text(plain) else S.TX_COPY_FAILED, bg=CREAM, fg=BLACK)
 
     def close(self):
         self.alive = False
@@ -378,6 +417,7 @@ class ComposeScreen(Overlay):
             return
         it = self.items[i]
         typed = tx.ledger_typed_data(self.frm, self.to, it["ph"], it["meta"])
+        self.step = S.CMP_STEP_SIGN.format(i=i + 1, n=n)
         self.show(S.CMP_SIGNING.format(i=i + 1, n=n, wallet=self.app.wallet.label()))
         self.request("eth_signTypedData_v4", [self.frm, typed],
                      lambda res: self.got_sig(i, res), self.fail)
@@ -395,6 +435,7 @@ class ComposeScreen(Overlay):
 
     def check(self):
         """Dry run of the whole transaction: a bad signature is caught before anything is sent."""
+        self.step = S.CMP_STEP_CHECK
         self.show(S.CMP_CHECKING)
         to, data = tx.record_call(self.frm, self.to, self.items)
         self.call = (to, data)
@@ -417,6 +458,7 @@ class ComposeScreen(Overlay):
             self.show(S.CMP_DRY_FAILED.format(reason=escape_markup(str(reason))), bg=RED, fg=WHITE)
             return
         to, data = self.call
+        self.step = S.CMP_STEP_SEND
         self.show(S.CMP_SENDING.format(wallet=self.app.wallet.label()))
         self.request("eth_sendTransaction",
                      [{"from": self.frm, "to": to, "value": "0x0", "data": data}],
@@ -430,7 +472,7 @@ class ComposeScreen(Overlay):
         app.pending.append(pend)
         if self.send_kind == "chat":
             app.add_chat(self.to)
-            app.ui["peer"] = self.to
+            app.ui["peer"] = app.conv_with(self.to)
         code, kind = self.code, self.send_kind
         app.say(S.CMP_WAITING.format(hash=short(h)).split("\n")[0], 12)
         if self.alive:

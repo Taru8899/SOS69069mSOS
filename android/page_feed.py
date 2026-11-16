@@ -17,6 +17,10 @@ from ui import Wrap, pill_button
 from widgets import Card, Choice, Panel, label
 
 
+def slot_key(kind, params):
+    return (kind, repr(sorted(params.items())))
+
+
 class Slot:
     """State of one view: its feed, a busy flag and the last error."""
 
@@ -53,9 +57,13 @@ class FeedPage:
         """(kind, address) a reply from this page is sent to."""
         raise NotImplementedError
 
+    def counter(self, msgs):
+        """How many of the loaded messages count towards the 4 a first load must find."""
+        return len(msgs)
+
     # ---- state
     def skey(self):
-        return (self.kind, repr(sorted(self.params().items())))
+        return slot_key(self.kind, self.params())
 
     def slot(self):
         k = self.skey()
@@ -78,6 +86,7 @@ class FeedPage:
             try:
                 if slot.feed is None or not older:
                     f = F.Feed(core.Chain(key), kind, params)
+                    f.counter = self.counter
                     f.refresh()
                     slot.feed = f
                 else:

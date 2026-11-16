@@ -463,8 +463,8 @@ RO_TIP_PIN = ("The pin value is the 32-byte form of your PIN that matches this o
               "hash. Send it from {wallet} before block {block:,}.")
 
 # ------------------------------------------------------------------ wallet link metadata (shown in the wallet)
-WC_APP_NAME = "dSOS"
-WC_APP_DESC = "dSOS companion app. It never holds keys: your wallet signs and sends."
+WC_APP_NAME = "mSOS"
+WC_APP_DESC = "mSOS messages on the SOS69069 ledger. It never holds keys: your wallet signs and sends."
 
 # ------------------------------------------------------------------ v8: shell, drawer, settings, links
 BTN_CLOSE = "Close"
@@ -812,3 +812,24 @@ CLOSE_X = "\u00d7"
 CLOSE_X_FMT = "%s \u00d7"
 M_CODE_CAPTION = "code [b]{code}[/b]"
 M_BOARD_FALLBACK = "Board"
+
+
+# ---- chat with 2 or more addresses, compose steps, mind clean-up
+CHAT_CONV_HEAD = "Chat with"
+CHAT_ADDR_HINT = "Address 0x... to chat with"
+CHAT_BTN_NEW = "New chat"
+CHAT_BTN_ADD = "Add to this chat"
+CHAT_BAD_ADDR = "That is not a valid 0x address."
+CHAT_SELF = "That is your own address."
+CHAT_FULL = "A chat holds at most {n} other addresses."
+CHAT_REMOVE = "Remove this chat"
+CHAT_PLUS = " + "
+CHAT_ARROW = "{a} \u2192 {b}"
+CHAT_PICK_TO = "Send to"
+CMP_STEP_SIGN = "signature {i} of {n}"
+CMP_STEP_CHECK = "check of the signatures"
+CMP_STEP_SEND = "sending the transaction"
+CMP_ERR_STEP = ("[b]Wallet error at {step}[/b]\n{error}\n[size=12sp]code {code} \u00b7 wallet {wallet}[/size]")
+CMP_COPY_ERR = "Copy error"
+CMP_ERR_COPIED = "Error copied."
+MSG_MIND_CLEARED = "Wallet disconnected. Watched addresses removed from Mind."

@@ -25,6 +25,9 @@ class BoardPage(FeedPage):
     def params(self):
         return {"board": self.board()}
 
+    def counter(self, msgs):
+        return len(F.with_tag(msgs, self.ui.get("tag")))     # what the person will actually see
+
     def reply_dest(self):
         return ("board", self.board())
 

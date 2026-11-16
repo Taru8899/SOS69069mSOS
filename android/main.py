@@ -18,10 +18,11 @@ from kivy.utils import escape_markup
 import page_board
 import page_chat
 import page_mind
+from page_feed import slot_key
 import strings as S
 import tx
 import util
-from design import FAB_D, FAB_SINK, FONT_BODY, HEADER_H, HEADER_LINE_H, LIGHT, LOGO_W, NAV_H
+from design import FAB_CLEAR, FAB_D, FAB_SINK, FONT_BODY, HEADER_H, HEADER_LINE_H, LIGHT, LOGO_W, NAV_H
 from page_compose import ComposeScreen
 from page_settings import SettingsScreen
 from theme import (BLACK, BLUE, BUILD, DEFAULT_BOARDS, GREEN, HAS_LOGO, LOGO, WELCOME_MIN, WHITE,
@@ -76,9 +77,11 @@ class MsosApp(App):
         self.boards = [dict(b) for b in (cfg.get("boards") or DEFAULT_BOARDS)]
         if not self.boards or self.boards[0]["addr"].lower() != DEFAULT_BOARDS[0]["addr"].lower():
             self.boards.insert(0, dict(DEFAULT_BOARDS[0]))      # the ledger board is always first
-        self.watch = list(cfg.get("watch") or [])
+        self.watch = []           # watched addresses live for one session only (see wipe_mind)
         self.tags = list(cfg.get("tags") or [])
-        self.chats = list(cfg.get("chats") or [])
+        # chats: every entry is one conversation = the other addresses joined by "," (1 to 3 of them);
+        # they are kept between sessions, together with the selected one
+        self.chats = [c.lower() for c in (cfg.get("chats") or []) if c]
         # page state
         self.ui = {"board": cfg.get("board") or self.boards[0]["addr"], "tag": cfg.get("tag"),
                    "board_sort": cfg.get("board_sort", "newest"),
@@ -161,7 +164,7 @@ class MsosApp(App):
         self.body.bind(width=self._fit_drawer)
         self.sv = PullScroll(size_hint=(1, 1), pos_hint={"x": 0, "y": 0}, on_pull=self.reload)
         self.box = BoxLayout(orientation="vertical", spacing=dp(10), size_hint_y=None,
-                             padding=[dp(14), dp(4), dp(14), dp(16)])
+                             padding=[dp(14), dp(4), dp(14), dp(16 + FAB_CLEAR)])
         self.box.bind(minimum_height=self.box.setter("height"))
         self.sv.add_widget(self.box)
         self.body.add_widget(self.sv)
@@ -186,7 +189,7 @@ class MsosApp(App):
         self.fab = IconBtn(icon="plus", bg=BLUE, color=WHITE, icon_size=30, size_hint=(None, None),
                            size=(d, d), pos_hint={"center_x": 0.5})
         self.fab.y = dp(NAV_H - FAB_SINK * FAB_D - 3)     # circle bottom = 10 % of its height inside the bar
-        self.fab.bind(on_release=lambda *_: self.open_compose())
+        self.fab.bind(on_release=lambda *_: self.fab_tap())
         root.add_widget(self.fab)
 
         # ---- welcome screen on top of everything at start
@@ -318,10 +321,48 @@ class MsosApp(App):
             self.ui["tag"] = None
         self._changed()
 
+    # ---- chats: a conversation is "0xB" or "0xB,0xC": me plus those addresses
+    MAX_PEERS = 3
+
+    @staticmethod
+    def conv_peers(key):
+        return [a for a in (key or "").lower().split(",") if a]
+
+    def conv_with(self, addr):
+        """The saved conversation that contains this address, or ''."""
+        a = (addr or "").lower()
+        return next((c for c in self.chats if a in self.conv_peers(c)), "")
+
     def add_chat(self, addr):
-        if addr.lower() not in [a.lower() for a in self.chats]:
-            self.chats.append(addr.lower())
+        """A conversation with one more address (nothing happens when one with it already exists)."""
+        a = (addr or "").lower()
+        if a and not self.conv_with(a):
+            self.chats.append(a)
         self.save_cfg()
+
+    def add_to_chat(self, key, addr):
+        """Add an address to the conversation `key` (2 or more addresses in one chat). Returns an error text or ''."""
+        a = (addr or "").lower()
+        if not tx.valid_address(a) or a == self.my.lower():
+            return S.CHAT_BAD_ADDR if not tx.valid_address(a) else S.CHAT_SELF
+        peers = self.conv_peers(key)
+        if a in peers:
+            return ""
+        if len(peers) >= self.MAX_PEERS:
+            return S.CHAT_FULL.format(n=self.MAX_PEERS)
+        new = ",".join(peers + [a])
+        self.chats = [new if c == key else c for c in self.chats] if key in self.chats else self.chats + [new]
+        self.ui["peer"] = new
+        self.slots = {k: v for k, v in self.slots.items() if k[0] != "chat"}
+        self.save_cfg()
+        return ""
+
+    def remove_chat(self, key):
+        self.chats = [c for c in self.chats if c != key]
+        if self.ui.get("peer") == key:
+            self.ui["peer"] = self.chats[0] if self.chats else ""
+        self.save_cfg()
+        self.render()
 
     # ---------------------------------------------------------- page state set by chips
     def set_board(self, addr):
@@ -392,23 +433,25 @@ class MsosApp(App):
         if self.drawer_open:
             self.set_drawer(False)
         self.overlays.append(w)
-        self.body.add_widget(w)
-        self.fab.opacity = 0
-        self.fab.disabled = True
+        self.body.add_widget(w)               # the blue "+" stays visible on every screen
 
     def close_top(self):
         if self.overlays:
             self.body.remove_widget(self.overlays.pop())
         if not self.overlays:
-            self.fab.opacity = 1
-            self.fab.disabled = False
             self.render()
 
     def close_all(self):
         while self.overlays:
             self.body.remove_widget(self.overlays.pop())
-        self.fab.opacity = 1
-        self.fab.disabled = False
+
+    def fab_tap(self):
+        """The blue +: a new message, or one more line when a message is being written."""
+        top = self.overlays[-1] if self.overlays else None
+        if isinstance(top, ComposeScreen):
+            top.add_line()
+        else:
+            self.open_compose()
 
     def open_settings(self):
         if self.overlays and isinstance(self.overlays[-1], SettingsScreen):
@@ -447,7 +490,40 @@ class MsosApp(App):
             self.wallet.disconnect()
         except Exception:  # noqa: BLE001
             pass
-        self.say(S.MSG_WALLET_DISCONNECTED)
+        self.wipe_mind()
+        self.say(S.MSG_MIND_CLEARED)
+
+    def wipe_mind(self):
+        """Mind keeps only the messages you signed to yourself. Watched addresses are forgotten: the
+        list, their messages and their scores. Chat, boards, tags and the Etherscan key are not touched."""
+        me = self.my.lower()
+        self.watch = []
+        keep = None
+        for k in [k for k in self.slots if k[0] == "mind"]:
+            slot = self.slots.pop(k)
+            f = slot.feed
+            if f is None or not me:
+                continue
+            f.records = {i: r for i, r in f.records.items() if r["signer"] == me and r["to"] == me}
+            f.eff = {a: v for a, v in f.eff.items() if a == me}
+            f.params = {"addrs": [me]}
+            keep = slot
+        if keep is not None:
+            self.slots[slot_key("mind", {"addrs": [me]})] = keep
+        for k in [k for k in self.ui["shown"] if k[0] == "mind"]:
+            del self.ui["shown"][k]
+        self.ui["mind_scope"] = "all"
+        self.ui["sel"] = None
+        self.save_cfg()
+        self.render()
+
+    def on_stop(self):
+        """App closed: the same clean-up for Mind (the file is saved without watched addresses)."""
+        try:
+            self.wipe_mind()
+            self.wallet.disconnect()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---------------------------------------------------------- sending finished
     def tx_done(self, pend, h, ok, block, reason, code):

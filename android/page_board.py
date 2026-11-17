@@ -46,15 +46,11 @@ class BoardPage(FeedPage):
             text = "%s %s" % (b["name"], short(b["addr"])) if on else b["name"]
             boards.append(chip(text, lambda a=b["addr"]: app.set_board(a), selected=on))
         boards.append(chip(S.BOARD_ADD, app.open_settings, kind="action"))
-        tags = [chip(S.BOARD_ALL_TAGS, lambda: app.set_tag(None), selected=not ui.get("tag"))]
-        for t in app.tags:
-            tags.append(chip(t, lambda t=t: app.set_tag(t), selected=ui.get("tag") == t))
-        tags.append(chip(S.BOARD_SAVE_TAG, app.open_settings, kind="outline"))
         sorts = []
         for key, text in S.BOARD_SORTS:
             sorts.append(chip(text.format(n=EFF_MIN), lambda k=key: app.set_sort("board_sort", k),
                               selected=ui.get("board_sort", "newest") == key))
-        return [chip_row(boards), chip_row(tags), chip_row(sorts)]
+        return [chip_row(boards), self.tag_row("tag"), chip_row(sorts)]
 
     def arrange(self, msgs):
         msgs = F.with_tag(msgs, self.ui.get("tag"))

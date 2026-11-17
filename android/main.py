@@ -99,6 +99,7 @@ class MsosApp(App):
                    "board_sort": cfg.get("board_sort", "newest"),
                    "mind_scope": cfg.get("mind_scope", "all"), "mind_sort": cfg.get("mind_sort", "newest"),
                    "peer": cfg.get("peer") or (self.chats[0] if self.chats else ""),
+                   "mind_tag": cfg.get("mind_tag"), "chat_tag": cfg.get("chat_tag"),
                    "chat_filter": "all", "sel": None, "shown": {}}
 
         self.wallet = Wallet(self)
@@ -229,7 +230,8 @@ class MsosApp(App):
                            "watch": self.watch, "tags": self.tags, "chats": self.chats,
                            "board": u.get("board"), "tag": u.get("tag"),
                            "board_sort": u.get("board_sort"), "mind_scope": u.get("mind_scope"),
-                           "mind_sort": u.get("mind_sort"), "peer": u.get("peer")}, f)
+                           "mind_sort": u.get("mind_sort"), "peer": u.get("peer"),
+                           "mind_tag": u.get("mind_tag"), "chat_tag": u.get("chat_tag")}, f)
         except Exception:  # noqa: BLE001
             pass
 
@@ -339,8 +341,9 @@ class MsosApp(App):
 
     def remove_tag(self, tag):
         self.tags = [t for t in self.tags if t != tag]
-        if self.ui.get("tag") == tag:
-            self.ui["tag"] = None
+        for k in ("tag", "mind_tag", "chat_tag"):
+            if self.ui.get(k) == tag:
+                self.ui[k] = None
         self._changed()
 
     # ---- chats: a conversation is "0xB" or "0xB,0xC": me plus those addresses
@@ -392,8 +395,11 @@ class MsosApp(App):
         self.ui["sel"] = None
         self._changed()
 
-    def set_tag(self, tag):
-        self.ui["tag"] = tag
+    def set_tag(self, tag, key="tag"):
+        """Select a saved tag for a page: key is tag (Board), mind_tag or chat_tag."""
+        self.ui[key] = tag
+        self.ui["sel"] = None
+        self.ui["shown"] = {}
         self._changed()
 
     def set_sort(self, key, value):

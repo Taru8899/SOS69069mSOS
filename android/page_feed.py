@@ -14,7 +14,7 @@ import strings as S
 from design import FONT_LABEL, FONT_NOTE, FONT_SMALL, GAP, GAP_SMALL, H_BUTTON, H_DETAIL, H_FIELD, H_LINE, H_NOTE
 import util
 from theme import BLACK, BLUE, ETHERSCAN_TX, PAGE_SIZE, WHITE, short
-from ui import Wrap, pill_button, send_card
+from ui import Wrap, chip, chip_row, pill_button, send_card
 from widgets import Card, Choice, Panel, label
 
 
@@ -58,6 +58,16 @@ class FeedPage:
     def reply_dest(self):
         """(kind, address) a reply from this page is sent to."""
         raise NotImplementedError
+
+    def tag_row(self, key):
+        """All tags + the saved tags + Save tag: the same row on Board, Mind and Chat. `key` is the
+        place where this page keeps its selected tag (tag, mind_tag, chat_tag)."""
+        app, ui = self.app, self.ui
+        row = [chip(S.BOARD_ALL_TAGS, lambda: app.set_tag(None, key), selected=not ui.get(key))]
+        for t in app.tags:
+            row.append(chip(t, lambda t=t: app.set_tag(t, key), selected=ui.get(key) == t))
+        row.append(chip(S.BOARD_SAVE_TAG, app.open_settings, kind="outline"))
+        return chip_row(row)
 
     def card_to(self):
         """Address whose sent-message cards this page shows (None = all of its kind)."""

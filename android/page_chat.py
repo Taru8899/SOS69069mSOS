@@ -9,7 +9,7 @@ import feed as F
 import strings as S
 import tx
 import util
-from design import FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_CONV_CARD, H_FIELD, H_HINT, MUTED, PAD_CARD, W_BTN_PASTE
+from design import CHAT_COLORS, FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_FIELD, H_HINT, ME_GREEN, MUTED, PAD_CARD, W_BTN_PASTE
 from page_feed import FeedPage
 from theme import BLACK, BLUE, WHITE, short
 from ui import ChatItem, block_head, chip, chip_row
@@ -55,8 +55,9 @@ class ChatPage(FeedPage):
     # ---- the "Chat with" card: type or paste an address, start a chat or add it to this one
     def conv_card(self):
         app, ui = self.app, self.ui
-        p = Panel(orientation="vertical", size_hint_y=None, height=dp(H_CONV_CARD), spacing=dp(GAP_SMALL),
+        p = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP_SMALL),
                   padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+        p.bind(minimum_height=p.setter("height"))        # as tall as its content: no empty band
         p.add_widget(label(S.CHAT_CONV_HEAD, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE,
                            color=MUTED))
         row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
@@ -128,7 +129,18 @@ class ChatPage(FeedPage):
         out = [self.conv_card()]
         if convs:
             out.append(chip_row(convs))
+        if self.peer():                                     # who is who: one coloured chip per sender
+            out.append(chip_row([chip(S.CHAT_LEGEND_YOU, color=ME_GREEN)] +
+                                [chip(short(a), color=c) for a, c in self.colors().items() if a != self.app.my.lower()]))
+        out.append(self.tag_row("chat_tag"))
         out.append(chip_row(row2))
+        return out
+
+    def colors(self):
+        """address -> colour of its messages: you dark green, the others blue, purple, orange in chat order."""
+        out = {self.app.my.lower(): ME_GREEN}
+        for i, a in enumerate(self.peers()):
+            out[a] = CHAT_COLORS[i % len(CHAT_COLORS)]
         return out
 
     def arrange(self, msgs):
@@ -146,6 +158,7 @@ class ChatPage(FeedPage):
             if flt == "replies" and not m["reply_to"]:
                 continue
             out.append(m)
+        out = F.with_tag(out, self.ui.get("chat_tag"))      # All tags / a saved #tag / an @code thread
         return F.sort_newest(out)            # newest first; shown oldest first
 
     def show(self, feed, slot):
@@ -157,7 +170,8 @@ class ChatPage(FeedPage):
         if more is not None:
             b.add_widget(more)
         if not visible:
-            b.add_widget(Card(S.M_EMPTY))
+            b.add_widget(Card(S.M_NO_TAG_MATCH if self.ui.get("chat_tag") else S.M_EMPTY))
+        colors = self.colors()
         last_block = None
         for m in reversed(visible):                       # oldest at the top
             if m["block"] != last_block:
@@ -172,15 +186,15 @@ class ChatPage(FeedPage):
             parts = [who]
             if len(m["lines"]) > 1:
                 parts.append(S.M_LINES.format(n=len(m["lines"])))
-            parts.append(S.M_CODE_CAPTION.format(code=m["code"]))
             parts.append(S.M_BLOCK.format(block=m["block"]))
-            item = ChatItem(m["lines"], mine, S.SEP.join(parts))
+            item = ChatItem(m["lines"], mine, S.SEP.join(parts), color=colors.get(m["signer"]),
+                            code=m["code"], on_reply=lambda m=m: self.reply(m))
             b.add_widget(self.tappable(item, m))
             if self.ui.get("sel") == m["id"]:
                 b.add_widget(self.detail(m))
         for p in self.app.pending:                          # sent, not in a block yet
             if p["kind"] == "chat" and p["to"].lower() in self.peers():
-                b.add_widget(ChatItem(p["lines"], True, S.M_PENDING, pending=True))
+                b.add_widget(ChatItem(p["lines"], True, S.M_PENDING, pending=True, color=ME_GREEN))
         b.add_widget(self.footer_note(feed))
         Clock.schedule_once(lambda dt: setattr(self.app.sv, "scroll_y", 0), 0.1)
 

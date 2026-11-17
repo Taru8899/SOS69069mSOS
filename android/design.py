@@ -200,14 +200,17 @@ W_CANCEL = 96
 H_SENDTO = 98
 H_DETAIL = 228             # message details panel
 
-H_TO_CARD = 160            # compose, Chat: "Send to" label + recipient chips + address field
-H_CONV_CARD = 190          # Chat page: "Chat with" label + address field + New chat / Add buttons
 FAB_CLEAR = FAB_D          # free space under the last row so the floating + never hides it
 
 # welcome screen wordmark (android/wordmark.png: "mSOS" built from the dSOS wordmark letters)
-WORDMARK_ASPECT = 94.0 / 421.0   # height / width of wordmark.png
+WORDMARK_ASPECT = 94.0 / 375.0   # height / width of wordmark.png
 WORDMARK_W = 0.68                # width as part of the screen width ...
 WORDMARK_MAX_DP = 330            # ... but at most this many dp
 FONT_WELCOME_RATE = "16sp"       # same sizes as the dSOS welcome screen
 FONT_WELCOME_SLOGAN = "20sp"
 W_BTN_PASTE = 84             # Paste button next to a field
+
+# chat: colour of each sender's bubble (you = ME_GREEN); the other addresses in the order of the chat
+CHAT_ORANGE = (0.85, 0.4, 0.0, 1)
+CHAT_COLORS = [BLUE, ICON_PURPLE, CHAT_ORANGE]
+W_BTN_LINK = 1.6              # share of the row taken by the "Open on Etherscan" button

@@ -12,7 +12,7 @@ from kivy.uix.widget import Widget
 from kivy.utils import escape_markup
 
 import strings as S
-from design import BLUE_HEX, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, GAP, GAP_CARDS, GAP_HAIR, GAP_PIXEL, GAP_SMALL, GAP_TINY, H_LABEL_ROW, H_NOTE, LINE_W, PAD_CARD, RED_HEX, W_BTN_SMALL, W_TAG_COL
+from design import W_BTN_LINK, BLUE_HEX, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, GAP, GAP_CARDS, GAP_HAIR, GAP_PIXEL, GAP_SMALL, GAP_TINY, H_LABEL_ROW, H_NOTE, LINE_W, PAD_CARD, RED_HEX, W_BTN_SMALL, W_TAG_COL
 from design import (AVATAR_D, BUBBLE_R, BUBBLE_TAIL_R, CHIP_H, CHIP_ROW_H, CODE_BG, CODE_H, CODE_W,
                     DARK_GREEN_HEX, ME_GREEN, TRACK_GRAY)
 from theme import BLACK, BLUE, GREEN, RED, WHITE, short
@@ -92,9 +92,12 @@ class Chip(Choice):
             self._ol.rounded_rectangle = (self.x, self.y, self.width, self.height, self.height / 2.0)
 
 
-def chip(text, on_tap=None, selected=False, kind="idle"):
-    """kind: idle (white / black when selected), action (blue), outline, green (you), blue."""
-    if kind == "action":
+def chip(text, on_tap=None, selected=False, kind="idle", color=None):
+    """kind: idle (white / black when selected), action (blue), outline, green (you), blue.
+    color: a fixed colour chip with white text (the senders of a chat)."""
+    if color is not None:
+        c = Chip(text, base=color, sel=color, fg=WHITE)
+    elif kind == "action":
         c = Chip(text, base=BLUE, sel=BLUE, fg=WHITE)
     elif kind == "outline":
         c = Chip(text, base=GREEN, sel=GREEN, fg=BLACK, outline=True)
@@ -186,12 +189,14 @@ class MsgCard(Tappable):
 class Bubble(BoxLayout):
     """Rounded message balloon holding the lines of one message."""
 
-    def __init__(self, lines, mine, pending=False, **kw):
+    def __init__(self, lines, mine, pending=False, color=None, **kw):
         super().__init__(orientation="vertical", size_hint_y=None, padding=[dp(PAD_CARD), dp(GAP_CARDS)],
                          spacing=dp(GAP_TINY), **kw)
-        self.mine, self.pending = mine, pending
-        fg = WHITE if (mine and not pending) else BLACK
-        bg = BLUE if (mine and not pending) else WHITE
+        self.mine, self.pending, self.col = mine, pending, color
+        # a sender colour: the balloon is that colour with white text (waiting = white with a dashed outline)
+        solid = not pending and (color is not None or mine)
+        fg = WHITE if solid else BLACK
+        bg = (color or BLUE) if solid else WHITE
         r, t = dp(BUBBLE_R), dp(BUBBLE_TAIL_R)
         self._radius = [r, r, t, r] if mine else [r, r, r, t]      # TL, TR, BR, BL
         with self.canvas.before:
@@ -200,12 +205,12 @@ class Bubble(BoxLayout):
         self._ol = None
         if pending:
             with self.canvas.after:
-                Color(*BLUE)
+                Color(*(color or BLUE))
                 self._ol = Line(rounded_rectangle=(0, 0, 10, 10, 8), width=dp(LINE_W),
                                 dash_length=dp(GAP_TINY), dash_offset=dp(GAP_PIXEL))
         for i, line in enumerate(lines):
             if i:
-                self.add_widget(Divider(color=(1, 1, 1, 0.4) if mine and not pending else TRACK_GRAY))
+                self.add_widget(Divider(color=(1, 1, 1, 0.4) if solid else TRACK_GRAY))
             self.add_widget(Wrap(text=fmt_line(line), color=fg, font_size=FONT_MSG))
         self.bind(minimum_height=self.setter("height"))
         settle(self, self._upd)
@@ -220,18 +225,25 @@ class Bubble(BoxLayout):
 class ChatItem(BoxLayout):
     """One chat message: balloon (left = other person, right = you) and a small caption."""
 
-    def __init__(self, lines, mine, caption, pending=False):
+    def __init__(self, lines, mine, caption, pending=False, color=None, code="", on_reply=None):
         super().__init__(orientation="vertical", size_hint_y=None, spacing=dp(GAP_PIXEL))
         self.bind(minimum_height=self.setter("height"))
         row = BoxLayout(size_hint_y=None)
         row.bind(minimum_height=row.setter("height"))
-        bubble = Bubble(lines, mine, pending, size_hint_x=0.78)
+        bubble = Bubble(lines, mine, pending, color=color, size_hint_x=0.78)
+        # the free space beside the balloon holds the reply code (tap = reply), as on the Mind cards
+        side = BoxLayout(orientation="vertical", size_hint_x=0.22)
+        if code and on_reply:
+            cc = CodeChip(code, pos_hint={"right": 1} if mine else {"x": 0})
+            cc.bind(on_release=lambda *_: on_reply())
+            side.add_widget(cc)
+        side.add_widget(Widget())
         if mine:
-            row.add_widget(Widget(size_hint_x=0.22))
+            row.add_widget(side)
             row.add_widget(bubble)
         else:
             row.add_widget(bubble)
-            row.add_widget(Widget(size_hint_x=0.22))
+            row.add_widget(side)
         self.add_widget(row)
         self.add_widget(Wrap(text=caption, font_size=FONT_NOTE, halign="right" if mine else "left",
                              padding=(dp(GAP_SMALL), 0)))
@@ -262,7 +274,8 @@ def send_card(e, on_open, on_copy, on_dismiss):
     if e.get("note") and st in ("wait", "slow"):
         p.add_widget(Wrap(text=S.OUT_NOTE.format(note=e["note"]), color=fg, font_size=FONT_NOTE))
     row = BoxLayout(size_hint_y=None, height=dp(H_BUTTON), spacing=dp(GAP))
-    b = Choice(base=BLUE if st != "fail" else WHITE, fg=WHITE if st != "fail" else BLACK, text=S.OUT_VIEW, bold=True)
+    b = Choice(base=BLUE if st != "fail" else WHITE, fg=WHITE if st != "fail" else BLACK, text=S.OUT_VIEW, bold=True,
+               size_hint_x=W_BTN_LINK)
     b.bind(on_release=lambda *_: on_open(h))
     row.add_widget(b)
     c = Choice(base=WHITE, fg=BLACK, text=S.OUT_COPY, bold=True)

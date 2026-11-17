@@ -16,7 +16,7 @@ import errors
 import feed as F
 import outbox
 import strings as S
-from design import FAB_CLEAR, H_TO_CARD, BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
+from design import FAB_CLEAR, BLUE_HEX, D_STEP, FONT_LABEL, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, FONT_TITLE, GAP, GAP_CARDS, GAP_SMALL, GAP_TINY, H_BUTTON_BIG, H_FIELD, H_HEADING, H_HINT, H_LINE, H_PAGE_BAR, H_REPLY_CARD, H_SENDTO, PAD_BOTTOM, PAD_CARD, PAD_PAGE, W_BACK, W_CANCEL, W_COUNTER
 import tx
 import util
 from design import CHIP_BG, CODE_BG, CREAM, DARK_GREEN, LIGHT_BLUE, LIGHT_GREEN, MUTED
@@ -114,8 +114,9 @@ class ComposeScreen(Overlay):
         box.add_widget(p)
         if self.kind == "chat":
             # who the record is sent to (its "intended to"): one of the chat's addresses, or any address
-            tp = Panel(orientation="vertical", size_hint_y=None, height=dp(H_TO_CARD), spacing=dp(GAP_SMALL),
+            tp = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP_SMALL),
                        padding=[dp(PAD_CARD), dp(GAP_CARDS)])
+            tp.bind(minimum_height=tp.setter("height"))        # as tall as its content
             tp.add_widget(label(S.CHAT_PICK_TO, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE,
                                 color=MUTED))
             who = []

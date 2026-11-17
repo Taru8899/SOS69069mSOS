@@ -46,7 +46,7 @@ class MindPage(FeedPage):
         for key, text in S.MIND_SORTS:
             row2.append(chip(text, lambda k=key: app.set_sort("mind_sort", k),
                              selected=ui.get("mind_sort", "newest") == key))
-        return [chip_row(who), chip_row(row2)]
+        return [chip_row(who), self.tag_row("mind_tag"), chip_row(row2)]
 
     def arrange(self, msgs):
         me = self.app.my.lower()
@@ -57,6 +57,7 @@ class MindPage(FeedPage):
             msgs = [m for m in msgs if m["signer"] != me]
         # a message is "mind" only when it was signed to its own signer
         msgs = [m for m in msgs if m["signer"] == m["to"]]
+        msgs = F.with_tag(msgs, self.ui.get("mind_tag"))          # All tags / a saved #tag / an @code thread
         return F.sort_eff(msgs) if self.ui.get("mind_sort", "newest") == "eff" else F.sort_newest(msgs)
 
     def show(self, feed, slot):
@@ -64,7 +65,7 @@ class MindPage(FeedPage):
         msgs = self.arrange(feed.messages())
         visible = msgs[:self.shown()]
         if not visible:
-            b.add_widget(Card(S.M_EMPTY))
+            b.add_widget(Card(S.M_NO_TAG_MATCH if self.ui.get("mind_tag") else S.M_EMPTY))
         by_block = self.ui.get("mind_sort", "newest") == "newest"
         last_block = None
         me = self.app.my.lower()

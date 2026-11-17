@@ -157,12 +157,14 @@ class CodeChip(ButtonBehavior, BoxLayout):
 class MsgCard(Tappable):
     """White card: avatar, the message as lines, a sub line, the reply code."""
 
-    def __init__(self, m, me, sub, on_tap, on_reply, selected=False):
+    def __init__(self, m, me, sub, on_tap, on_reply, selected=False, color=None, pending=False):
         super().__init__(padding=[dp(PAD_CARD), dp(GAP_CARDS)], spacing=dp(PAD_CARD), size_hint_y=None, height=dp(W_BTN_SMALL))
         self.set_selected(selected)
         self.bind(on_release=lambda *_: on_tap(m))
         mine = m["signer"] == me
         col = ME_GREEN if mine else (RED if (m["eff"] is not None and m["eff"] < 0) else BLUE)
+        if color is not None:                                  # Chat: the colour of the sender
+            col = color
         av = BoxLayout(orientation="vertical", size_hint=(None, 1), width=dp(AVATAR_D))
         av.add_widget(Dot(bg=col, text=m["signer"][2:4], color=WHITE,
                           size=(dp(AVATAR_D), dp(AVATAR_D))))
@@ -178,75 +180,12 @@ class MsgCard(Tappable):
         mid.add_widget(Wrap(text=sub, font_size=FONT_NOTE))
         self.add_widget(mid)
         right = BoxLayout(orientation="vertical", size_hint=(None, 1), width=dp(CODE_W))
-        cc = CodeChip(m["code"])
-        cc.bind(on_release=lambda *_: on_reply(m))
-        right.add_widget(cc)
+        if not pending:
+            cc = CodeChip(m["code"])
+            cc.bind(on_release=lambda *_: on_reply(m))
+            right.add_widget(cc)
         right.add_widget(Widget())
         self.add_widget(right)
-
-
-# ------------------------------------------------------------------ chat bubble
-class Bubble(BoxLayout):
-    """Rounded message balloon holding the lines of one message."""
-
-    def __init__(self, lines, mine, pending=False, color=None, **kw):
-        super().__init__(orientation="vertical", size_hint_y=None, padding=[dp(PAD_CARD), dp(GAP_CARDS)],
-                         spacing=dp(GAP_TINY), **kw)
-        self.mine, self.pending, self.col = mine, pending, color
-        # a sender colour: the balloon is that colour with white text (waiting = white with a dashed outline)
-        solid = not pending and (color is not None or mine)
-        fg = WHITE if solid else BLACK
-        bg = (color or BLUE) if solid else WHITE
-        r, t = dp(BUBBLE_R), dp(BUBBLE_TAIL_R)
-        self._radius = [r, r, t, r] if mine else [r, r, r, t]      # TL, TR, BR, BL
-        with self.canvas.before:
-            Color(*bg)
-            self._bg = RoundedRectangle(radius=self._radius)
-        self._ol = None
-        if pending:
-            with self.canvas.after:
-                Color(*(color or BLUE))
-                self._ol = Line(rounded_rectangle=(0, 0, 10, 10, 8), width=dp(LINE_W),
-                                dash_length=dp(GAP_TINY), dash_offset=dp(GAP_PIXEL))
-        for i, line in enumerate(lines):
-            if i:
-                self.add_widget(Divider(color=(1, 1, 1, 0.4) if solid else TRACK_GRAY))
-            self.add_widget(Wrap(text=fmt_line(line), color=fg, font_size=FONT_MSG))
-        self.bind(minimum_height=self.setter("height"))
-        settle(self, self._upd)
-
-    def _upd(self, *_):
-        self._bg.pos = self.pos
-        self._bg.size = self.size
-        if self._ol is not None and self.width >= 4 and self.height >= 4:
-            self._ol.rounded_rectangle = (self.x, self.y, self.width, self.height, dp(BUBBLE_R))
-
-
-class ChatItem(BoxLayout):
-    """One chat message: balloon (left = other person, right = you) and a small caption."""
-
-    def __init__(self, lines, mine, caption, pending=False, color=None, code="", on_reply=None):
-        super().__init__(orientation="vertical", size_hint_y=None, spacing=dp(GAP_PIXEL))
-        self.bind(minimum_height=self.setter("height"))
-        row = BoxLayout(size_hint_y=None)
-        row.bind(minimum_height=row.setter("height"))
-        bubble = Bubble(lines, mine, pending, color=color, size_hint_x=0.78)
-        # the free space beside the balloon holds the reply code (tap = reply), as on the Mind cards
-        side = BoxLayout(orientation="vertical", size_hint_x=0.22)
-        if code and on_reply:
-            cc = CodeChip(code, pos_hint={"right": 1} if mine else {"x": 0})
-            cc.bind(on_release=lambda *_: on_reply())
-            side.add_widget(cc)
-        side.add_widget(Widget())
-        if mine:
-            row.add_widget(side)
-            row.add_widget(bubble)
-        else:
-            row.add_widget(bubble)
-            row.add_widget(side)
-        self.add_widget(row)
-        self.add_widget(Wrap(text=caption, font_size=FONT_NOTE, halign="right" if mine else "left",
-                             padding=(dp(GAP_SMALL), 0)))
 
 
 # ------------------------------------------------------------------ status card of a sent message

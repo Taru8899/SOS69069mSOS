@@ -1,7 +1,6 @@
 """Chat: a conversation between your address (A) and one or more other addresses (B, C ...). Every
 message is an SOS record signed by one of them to another one ("intended to"); the page reads every
 pair of the conversation and shows them by block time, newest at the bottom."""
-from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 
@@ -9,10 +8,10 @@ import feed as F
 import strings as S
 import tx
 import util
-from design import CHAT_COLORS, FONT_NOTE, GAP, GAP_CARDS, GAP_SMALL, H_FIELD, H_HINT, ME_GREEN, MUTED, PAD_CARD, W_BTN_PASTE
+from design import CHAT_COLORS, FONT_NOTE, FONT_SMALL, H_LINE, GAP, GAP_CARDS, GAP_SMALL, H_FIELD, H_HINT, ME_GREEN, MUTED, PAD_CARD, W_BTN_PASTE
 from page_feed import FeedPage
 from theme import BLACK, BLUE, WHITE, short
-from ui import ChatItem, block_head, chip, chip_row
+from ui import MsgCard, block_head, chip, chip_row
 from widgets import Card, Choice, Panel, label, make_input
 
 
@@ -162,54 +161,51 @@ class ChatPage(FeedPage):
         return F.sort_newest(out)            # newest first; shown oldest first
 
     def show(self, feed, slot):
+        """The same cards as Board and Mind (newest first, block headings, Load more at the bottom);
+        the avatar circle carries the colour of the sender."""
         b = self.box
         me = self.app.my.lower()
         msgs = self.arrange(feed.messages())
         visible = msgs[:self.shown()]
-        more = self.more_button(len(msgs), feed, slot, older_label=True)
-        if more is not None:
-            b.add_widget(more)
+        colors = self.colors()
+        for p in self.app.pending:                          # sent, not in a block yet: on top, waiting
+            if p["kind"] == "chat" and p["to"].lower() in self.peers():
+                pm = {"signer": me, "to": p["to"].lower(), "lines": p["lines"], "eff": None, "code": "",
+                      "id": "pending", "block": 0, "n_replies": 0}
+                b.add_widget(MsgCard(pm, me, S.M_PENDING, lambda m: None, lambda m: None,
+                                     color=ME_GREEN, pending=True))
         if not visible:
             b.add_widget(Card(S.M_NO_TAG_MATCH if self.ui.get("chat_tag") else S.M_EMPTY))
-        colors = self.colors()
         last_block = None
-        for m in reversed(visible):                       # oldest at the top
+        for m in visible:
             if m["block"] != last_block:
                 b.add_widget(block_head(m, F.when(m["ts"])))
                 last_block = m["block"]
-            mine = m["signer"] == me
-            who = S.M_YOU if mine else short(m["signer"])
-            if len(self.peers()) > 1 or (m["to"] != me and not mine):
-                who = S.CHAT_ARROW.format(a=who, b=S.M_YOU if m["to"] == me else short(m["to"]))
-            elif not mine:
-                who = short(m["signer"])
-            parts = [who]
-            if len(m["lines"]) > 1:
-                parts.append(S.M_LINES.format(n=len(m["lines"])))
-            parts.append(S.M_BLOCK.format(block=m["block"]))
-            item = ChatItem(m["lines"], mine, S.SEP.join(parts), color=colors.get(m["signer"]),
-                            code=m["code"], on_reply=lambda m=m: self.reply(m))
-            b.add_widget(self.tappable(item, m))
+            b.add_widget(MsgCard(m, me, self.chat_sub(m, me), self.select, self.reply,
+                                 selected=self.ui.get("sel") == m["id"], color=colors.get(m["signer"])))
             if self.ui.get("sel") == m["id"]:
                 b.add_widget(self.detail(m))
-        for p in self.app.pending:                          # sent, not in a block yet
-            if p["kind"] == "chat" and p["to"].lower() in self.peers():
-                b.add_widget(ChatItem(p["lines"], True, S.M_PENDING, pending=True, color=ME_GREEN))
+        b.add_widget(label(S.M_SHOWN.format(n=len(visible)), size_hint_y=None, height=dp(H_LINE),
+                           font_size=FONT_SMALL, halign="center"))
+        more = self.more_button(len(msgs), feed, slot)
+        if more is not None:
+            b.add_widget(more)
         b.add_widget(self.footer_note(feed))
-        Clock.schedule_once(lambda dt: setattr(self.app.sv, "scroll_y", 0), 0.1)
 
-    def tappable(self, item, m):
-        """Make a chat item tappable (tap = details and reply)."""
-        from kivy.uix.behaviors import ButtonBehavior
-        from kivy.uix.boxlayout import BoxLayout
-
-        class Hit(ButtonBehavior, BoxLayout):
-            pass
-        h = Hit(orientation="vertical", size_hint_y=None)
-        h.bind(minimum_height=h.setter("height"))
-        h.add_widget(item)
-        h.bind(on_release=lambda *_: self.select(m))
-        return h
+    def chat_sub(self, m, me):
+        """'You to 0x08e5...5fee · 2 lines · 18h ago · 2 replies' (the grey line of a card)."""
+        a = S.M_YOU if m["signer"] == me else short(m["signer"])
+        c = S.M_YOU if m["to"] == me else short(m["to"])
+        parts = [S.CHAT_ARROW.format(a=a, b=c)]
+        if len(m["lines"]) > 1:
+            parts.append(S.M_LINES.format(n=len(m["lines"])))
+        parts.append(S.M_BLOCK.format(block=m["block"]))
+        ago = F.when(m["ts"])
+        if ago:
+            parts.append(ago)
+        if m["n_replies"]:
+            parts.append(S.M_REPLIES.format(n=m["n_replies"]))
+        return S.SEP.join(parts)
 
 
 def build(app, box):

@@ -374,7 +374,56 @@ def test_send_flow_cards_hold_and_paste():
     print("ok send flow, hold, paste, welcome")
 
 
+def test_tags_on_mind_and_chat_and_colours():
+    import json
+    import strings as S
+    from design import CHAT_COLORS, ME_GREEN
+    OTHER = "0x" + "5d" * 20
+    app = main.MsosApp()
+    app.build()
+    app.my, app.es_key = ME, ""
+    app.tags = ["#market", "@abc"]
+    app.ui["tag"] = app.ui["mind_tag"] = app.ui["chat_tag"] = None      # (the stub keeps one cfg file)
+    # Mind: All tags / a saved tag
+    app.page = "mind"
+    mp = main.page_mind.MindPage(app, app.box)
+    f = sample_feed("mind", mp.params())
+    f.records[("0xm1", 1)] = {"tx": "0xm1", "block": 90, "idx": 1, "ts": 1700000090, "signer": ME, "to": ME,
+                              "submitter": ME, "ph": bytes([40]) * 32, "text": "plan #market stall"}
+    msgs = f.messages()
+    assert len(mp.arrange(msgs)) > 1                      # no tag selected: everything
+    app.set_tag("#market", "mind_tag")
+    got = mp.arrange(msgs)
+    assert [m["tx"] for m in got] == ["0xm1"]
+    assert app.ui["tag"] is None and app.ui["mind_tag"] == "#market"          # Board keeps its own selection
+    chips = mp.chips()
+    assert len(chips) == 3                                # who, tags, scope/sort
+    app.remove_tag("#market")
+    assert app.ui["mind_tag"] is None
+    with open(app.cfg_path) as fh:
+        saved = json.load(fh)
+    assert "mind_tag" in saved and "chat_tag" in saved
+    # Chat: one colour per sender, code box, no arrow glyph, tag filter
+    app.add_chat(PEER)
+    assert app.add_to_chat(PEER, OTHER) == ""
+    app.page = "chat"
+    cp = main.page_chat.ChatPage(app, app.box)
+    cols = cp.colors()
+    assert cols[ME.lower()] == ME_GREEN and cols[PEER] == CHAT_COLORS[0] and cols[OTHER] == CHAT_COLORS[1]
+    assert "\u2192" not in S.CHAT_ARROW and S.CHAT_ARROW.format(a="A", b="B") == "A to B"
+    ch = f2 = sample_feed("chat", cp.params())
+    msgs = ch.messages()
+    code = F.code_of(bytes([7]) * 32)
+    app.tags = ["@" + code]
+    app.set_tag("@" + code, "chat_tag")
+    got = cp.arrange(msgs)
+    assert got and all(m["code"] == code or m["reply_to"] == code for m in got)
+    assert len(cp.chips()) == 5                           # card, chats, legend, tags, filters
+    print("ok tags on mind/chat, colours")
+
+
 if __name__ == "__main__":
     test_everything()
     test_rules()
     test_send_flow_cards_hold_and_paste()
+    test_tags_on_mind_and_chat_and_colours()

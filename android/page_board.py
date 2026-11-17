@@ -37,6 +37,17 @@ class BoardPage(FeedPage):
     def reply_dest(self):
         return ("board", self.board())
 
+    def fold_title(self):
+        cur = self.board().lower()
+        for b in self.app.boards:
+            if b["addr"].lower() == cur:
+                return b["name"]
+        return S.FOLD_BOARD
+
+    def fold_summary(self):
+        sort = dict(S.BOARD_SORTS).get(self.ui.get("board_sort", "newest"), "").format(n=EFF_MIN)
+        return S.SEP.join([x for x in (self.ui.get("tag"), sort) if x])
+
     def chips(self):
         app, ui = self.app, self.ui
         cur = self.board().lower()

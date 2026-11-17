@@ -58,8 +58,6 @@ class ChatPage(FeedPage):
         p = Panel(orientation="vertical", size_hint_y=None, spacing=dp(GAP_SMALL),
                   padding=[dp(PAD_CARD), dp(GAP_CARDS)])
         p.bind(minimum_height=p.setter("height"))        # as tall as its content: no empty band
-        p.add_widget(label(S.CHAT_CONV_HEAD, size_hint_y=None, height=dp(H_HINT), font_size=FONT_NOTE,
-                           color=MUTED))
         row = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
         self.addr_in = make_input(S.CHAT_ADDR_HINT, ui.get("chat_addr", ""))
         self.addr_in.bind(text=lambda i, v: ui.__setitem__("chat_addr", v.strip()))
@@ -118,6 +116,15 @@ class ChatPage(FeedPage):
             return
         self.ui["chat_addr"] = ""
         self.app.render()
+
+    def fold_title(self):
+        return S.CHAT_CONV_HEAD
+
+    def fold_summary(self):
+        ui = self.ui
+        flt = dict(S.CHAT_FILTERS).get(ui.get("chat_filter", "all"), "")
+        conv = S.CHAT_PLUS.join(short(a) for a in self.peers())
+        return S.SEP.join([x for x in (conv, ui.get("chat_tag"), flt) if x])
 
     def chips(self):
         app, ui = self.app, self.ui

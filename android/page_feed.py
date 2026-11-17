@@ -14,7 +14,7 @@ import strings as S
 from design import FONT_LABEL, FONT_NOTE, FONT_SMALL, GAP, GAP_SMALL, H_BUTTON, H_DETAIL, H_FIELD, H_LINE, H_NOTE
 import util
 from theme import BLACK, BLUE, ETHERSCAN_TX, PAGE_SIZE, WHITE, short
-from ui import Wrap, chip, chip_row, pill_button, send_card
+from ui import FoldHeader, Wrap, chip, chip_row, pill_button, send_card
 from widgets import Card, Choice, Panel, label
 
 
@@ -50,6 +50,22 @@ class FeedPage:
     def chips(self):
         """List of widgets (chip rows) above the messages."""
         return []
+
+    def fold_title(self):
+        """Name on the header that opens / closes the chips (Ledger, Me 0x..., Chat with)."""
+        return self.kind.capitalize()
+
+    def fold_summary(self):
+        """What is selected, shown on the header while it is closed."""
+        return ""
+
+    def folded(self):
+        return bool(self.ui.get("fold_" + self.kind))
+
+    def toggle_fold(self):
+        self.ui["fold_" + self.kind] = not self.folded()
+        self.app._changed()
+        self.app.render()
 
     def show(self, feed, slot):
         """Add the messages (and the Load more button) for a loaded feed."""
@@ -136,8 +152,10 @@ class FeedPage:
     def build(self):
         b = self.box
         why = self.not_ready()
-        for w in self.chips():
-            b.add_widget(w)
+        b.add_widget(FoldHeader(self.fold_title(), self.fold_summary(), not self.folded(), self.toggle_fold))
+        if not self.folded():
+            for w in self.chips():
+                b.add_widget(w)
         for e in self.app.outbox.for_page(self.kind, self.card_to()):      # sent messages: link, result, errors
             b.add_widget(send_card(e, self.app.open_tx, self.app.copy_hash, self.app.dismiss_entry))
         if why:

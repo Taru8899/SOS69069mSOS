@@ -816,6 +816,8 @@ M_BOARD_FALLBACK = "Board"
 
 # ---- chat with 2 or more addresses, compose steps, mind clean-up
 CHAT_CONV_HEAD = "Chat with"
+FOLD_BOARD = "Board"
+FOLD_MIND = "Mind"
 CHAT_ADDR_HINT = "Address 0x... to chat with"
 CHAT_BTN_NEW = "New chat"
 CHAT_BTN_ADD = "Add to this chat"

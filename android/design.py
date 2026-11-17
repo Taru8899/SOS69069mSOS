@@ -172,6 +172,9 @@ BLUE_HEX = "0033ff"        # reply codes (@code)
 RED_HEX = "b00021"         # negative effective score
 # spacing and sizes (dp)
 LINE_W = 1.5               # outline width of dashed bubble / outline chip
+FOLD_ARROW_D = 7           # half-size of the triangle of a fold header
+FOLD_ARROW_W = 30          # its column
+FOLD_SUMMARY_SP = "12sp"   # the small text of a closed header
 GAP_HAIR = 2
 GAP_PIXEL = 3
 GAP_TINY = 4

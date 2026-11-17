@@ -2,7 +2,7 @@
 Colours and sizes come from design.py; wording from strings.py."""
 import re
 
-from kivy.graphics import Color, Line, RoundedRectangle
+from kivy.graphics import Color, Line, RoundedRectangle, Triangle
 from kivy.metrics import dp
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -14,7 +14,7 @@ from kivy.utils import escape_markup
 import strings as S
 from design import W_BTN_LINK, BLUE_HEX, FONT_MEDIUM, FONT_MSG, FONT_NOTE, FONT_SMALL, FONT_TINY, GAP, GAP_CARDS, GAP_HAIR, GAP_PIXEL, GAP_SMALL, GAP_TINY, H_LABEL_ROW, H_NOTE, LINE_W, PAD_CARD, RED_HEX, W_BTN_SMALL, W_TAG_COL
 from design import (AVATAR_D, BUBBLE_R, BUBBLE_TAIL_R, CHIP_H, CHIP_ROW_H, CODE_BG, CODE_H, CODE_W,
-                    DARK_GREEN_HEX, ME_GREEN, TRACK_GRAY)
+                    DARK_GREEN_HEX, ME_GREEN, TRACK_GRAY, FOLD_ARROW_D, FOLD_ARROW_W, FOLD_SUMMARY_SP, H_BUTTON)
 from theme import BLACK, BLUE, GREEN, RED, WHITE, short
 from widgets import Choice, Dot, Divider, Tappable, rad, settle
 
@@ -186,6 +186,47 @@ class MsgCard(Tappable):
             right.add_widget(cc)
         right.add_widget(Widget())
         self.add_widget(right)
+
+
+# ------------------------------------------------------------------ fold header (Board, Mind, Chat)
+class Arrow(Widget):
+    """A small filled triangle: pointing right when closed, down when open."""
+
+    def __init__(self, open_, **kw):
+        kw.setdefault("size_hint", (None, 1))
+        kw.setdefault("width", dp(FOLD_ARROW_W))
+        super().__init__(**kw)
+        self.open_ = open_
+        with self.canvas:
+            Color(*BLACK)
+            self._t = Triangle(points=[0, 0, 0, 0, 0, 0])
+        settle(self, self._upd)
+
+    def _upd(self, *_):
+        s = dp(FOLD_ARROW_D)
+        cx, cy = self.center_x, self.center_y
+        if self.open_:                                   # down
+            pts = [cx - s, cy + s / 2, cx + s, cy + s / 2, cx, cy - s / 2]
+        else:                                            # right
+            pts = [cx - s / 2, cy + s, cx - s / 2, cy - s, cx + s / 2, cy]
+        self._t.points = pts
+
+
+class FoldHeader(Tappable):
+    """One line above the messages: the page's name, what is selected, and a triangle. Tap = show
+    or hide the address chips, tags and filters below it."""
+
+    def __init__(self, title, summary, open_, on_tap, **kw):
+        super().__init__(size_hint_y=None, height=dp(H_BUTTON), padding=[dp(PAD_CARD), 0], spacing=dp(GAP), **kw)
+        text = "[b]%s[/b]" % escape_markup(title)
+        if summary and not open_:
+            text += "  [size=%s]%s[/size]" % (FOLD_SUMMARY_SP, escape_markup(summary))
+        lb = Label(text=text, markup=True, color=BLACK, halign="left", valign="middle", shorten=True,
+                   shorten_from="right", font_size=FONT_MSG)
+        lb.bind(size=lambda i, s: setattr(i, "text_size", s))
+        self.add_widget(lb)
+        self.add_widget(Arrow(open_))
+        self.bind(on_release=lambda *_: on_tap())
 
 
 # ------------------------------------------------------------------ status card of a sent message

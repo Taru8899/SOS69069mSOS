@@ -31,6 +31,15 @@ class MindPage(FeedPage):
     def reply_dest(self):
         return ("mind", self.app.my)
 
+    def fold_title(self):
+        return S.MIND_ME.format(addr=short(self.app.my)) if self.app.my else S.FOLD_MIND
+
+    def fold_summary(self):
+        ui = self.ui
+        scope = dict(S.MIND_SCOPES).get(ui.get("mind_scope", "all"), "")
+        sort = dict(S.MIND_SORTS).get(ui.get("mind_sort", "newest"), "")
+        return S.SEP.join([x for x in (ui.get("mind_tag"), scope, sort) if x])
+
     def chips(self):
         app, ui = self.app, self.ui
         who = []

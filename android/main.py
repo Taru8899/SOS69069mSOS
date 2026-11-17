@@ -100,7 +100,9 @@ class MsosApp(App):
                    "mind_scope": cfg.get("mind_scope", "all"), "mind_sort": cfg.get("mind_sort", "newest"),
                    "peer": cfg.get("peer") or (self.chats[0] if self.chats else ""),
                    "mind_tag": cfg.get("mind_tag"), "chat_tag": cfg.get("chat_tag"),
-                   "chat_filter": "all", "sel": None, "shown": {}}
+                   "chat_filter": "all", "sel": None, "shown": {},
+                   "fold_board": cfg.get("fold_board", False), "fold_mind": cfg.get("fold_mind", False),
+                   "fold_chat": cfg.get("fold_chat", False)}
 
         self.wallet = Wallet(self)
         self.slots = {}           # (page, params) -> page_feed.Slot (cleared by reload)
@@ -231,7 +233,9 @@ class MsosApp(App):
                            "board": u.get("board"), "tag": u.get("tag"),
                            "board_sort": u.get("board_sort"), "mind_scope": u.get("mind_scope"),
                            "mind_sort": u.get("mind_sort"), "peer": u.get("peer"),
-                           "mind_tag": u.get("mind_tag"), "chat_tag": u.get("chat_tag")}, f)
+                           "mind_tag": u.get("mind_tag"), "chat_tag": u.get("chat_tag"),
+                           "fold_board": u.get("fold_board"), "fold_mind": u.get("fold_mind"),
+                           "fold_chat": u.get("fold_chat")}, f)
         except Exception:  # noqa: BLE001
             pass
 

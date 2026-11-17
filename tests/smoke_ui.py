@@ -419,7 +419,28 @@ def test_tags_on_mind_and_chat_and_colours():
     got = cp.arrange(msgs)
     assert got and all(m["code"] == code or m["reply_to"] == code for m in got)
     assert len(cp.chips()) == 5                           # card, chats, legend, tags, filters
-    print("ok tags on mind/chat, colours")
+    # Chat list = the Board/Mind card (MsgCard), avatar coloured by sender, newest first
+    app.tags = []
+    app.set_tag(None, "chat_tag")
+    app.box.clear_widgets()
+    slot = type("S", (), {"busy": False})()
+    cp.show(ch, slot)
+    cards = [w for w in app.box.children if type(w).__name__ == "MsgCard"]
+    assert cards and not any(type(w).__name__ in ("ChatItem", "Bubble") for w in app.box.children)
+    # "Replies to" thread button on every page, into that page's own tag slot
+    for k, slot_key in (("board", "tag"), ("mind", "mind_tag"), ("chat", "chat_tag")):
+        app.ui[slot_key] = None
+        app.follow_code("abc", slot_key)
+        assert app.ui[slot_key] == "@abc", k
+    cc = cp.conv_card()
+    def walk(w):
+        yield w
+        for c in w.children:
+            yield from walk(c)
+    order = [w.text for w in walk(cc) if getattr(w, "text", "") in (S.CHAT_BTN_ADD, S.CHAT_BTN_NEW)]
+    texts = order if order[0] == S.CHAT_BTN_ADD else order[::-1]      # (stub may list children either way)
+    assert texts == [S.CHAT_BTN_ADD, S.CHAT_BTN_NEW], texts
+    print("ok tags on mind/chat, colours, chat cards", len(cards))
 
 
 if __name__ == "__main__":

@@ -440,6 +440,22 @@ def test_tags_on_mind_and_chat_and_colours():
     order = [w.text for w in walk(cc) if getattr(w, "text", "") in (S.CHAT_BTN_ADD, S.CHAT_BTN_NEW)]
     texts = order if order[0] == S.CHAT_BTN_ADD else order[::-1]      # (stub may list children either way)
     assert texts == [S.CHAT_BTN_ADD, S.CHAT_BTN_NEW], texts
+    # fold header: open = chips shown, closed = only the header; remembered per page
+    def count_after(pg, fold):
+        app.ui["fold_" + pg.kind] = fold
+        app.box.clear_widgets()
+        pg.box = app.box
+        import ui as U
+        app.box.add_widget(U.FoldHeader(pg.fold_title(), pg.fold_summary(), not pg.folded(), pg.toggle_fold))
+        if not pg.folded():
+            for w in pg.chips():
+                app.box.add_widget(w)
+        return len(app.box.children)
+    for pg in (cp, main.page_mind.MindPage(app, app.box), main.page_board.BoardPage(app, app.box)):
+        assert count_after(pg, False) > 1 and count_after(pg, True) == 1, pg.kind
+        assert pg.fold_title()
+    pg.toggle_fold()
+    assert app.ui["fold_board"] is False
     print("ok tags on mind/chat, colours, chat cards", len(cards))
 
 

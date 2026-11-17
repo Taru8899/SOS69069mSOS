@@ -3,6 +3,7 @@ message is an SOS record signed by one of them to another one ("intended to"); t
 pair of the conversation and shows them by block time, newest at the bottom."""
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.widget import Widget
 
 import feed as F
 import strings as S
@@ -68,13 +69,15 @@ class ChatPage(FeedPage):
         row.add_widget(paste)
         p.add_widget(row)
         btns = BoxLayout(size_hint_y=None, height=dp(H_FIELD), spacing=dp(GAP))
-        new = Choice(base=BLUE, fg=WHITE, text=S.CHAT_BTN_NEW, bold=True)
-        new.bind(on_release=lambda *_: self.new_chat())
-        btns.add_widget(new)
-        if self.peer():
+        if self.peer():                                     # left: add to this chat, right: new chat
             add = Choice(base=BLACK, fg=WHITE, text=S.CHAT_BTN_ADD, bold=True)
             add.bind(on_release=lambda *_: self.add_here())
             btns.add_widget(add)
+        else:
+            btns.add_widget(Widget())                       # keeps New chat on the right
+        new = Choice(base=BLUE, fg=WHITE, text=S.CHAT_BTN_NEW, bold=True)
+        new.bind(on_release=lambda *_: self.new_chat())
+        btns.add_widget(new)
         p.add_widget(btns)
         return p
 

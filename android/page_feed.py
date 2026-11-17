@@ -234,10 +234,10 @@ class FeedPage:
         rp = Choice(base=BLACK, fg=WHITE, text="%s %s" % (S.M_BTN_REPLY, m["code"]), bold=True)
         rp.bind(on_release=lambda *_: self.reply(m))
         row.add_widget(rp)
-        if self.kind == "board":                    # follow every reply to this message as one tag
-            th = Choice(base=BLUE, fg=WHITE, text=S.M_BTN_THREAD.format(code=m["code"]), bold=True)
-            th.bind(on_release=lambda *_: self.app.follow_code(m["code"]))
-            row.add_widget(th)
+        key = {"board": "tag", "mind": "mind_tag", "chat": "chat_tag"}.get(self.kind, "tag")
+        th = Choice(base=BLUE, fg=WHITE, text=S.M_BTN_THREAD.format(code=m["code"]), bold=True)   # every reply as one tag
+        th.bind(on_release=lambda *_: self.app.follow_code(m["code"], key))
+        row.add_widget(th)
         p.add_widget(row)
         return p
 

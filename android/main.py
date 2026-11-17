@@ -334,10 +334,11 @@ class MsosApp(App):
             self.tags.append(tag)
         self._changed()
 
-    def follow_code(self, code):
-        """Save @code as a tag and show only that thread (the message and its replies)."""
+    def follow_code(self, code, key="tag"):
+        """Save @code as a tag and show only that thread (the message and its replies) on the page
+        whose tag slot is key: tag (Board), mind_tag or chat_tag."""
         self.add_tag("@" + code.lower())
-        self.set_tag("@" + code.lower())
+        self.set_tag("@" + code.lower(), key)
 
     def remove_tag(self, tag):
         self.tags = [t for t in self.tags if t != tag]
